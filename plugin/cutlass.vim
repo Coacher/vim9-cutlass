@@ -26,7 +26,7 @@ g:vim9cutlass_registers = get(
 )
 
 
-import autoload '../autoload/vim9cutlass.vim'
+import '../autoload/cutlass.vim'
 
-vim9cutlass.OverrideDefaultMappings()
-vim9cutlass.CreateCutMappings()
+cutlass.OverrideDefaultMappings()
+cutlass.CreateCutMappings()
