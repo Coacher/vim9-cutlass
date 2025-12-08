@@ -1,4 +1,6 @@
-if !has('vim9script')
+if exists('g:vim9cutlass_loaded')
+    finish
+elseif !has('vim9script')
     echoerr 'vim9-cutlass requires vim9script feature enabled'
     finish
 endif
@@ -6,12 +8,7 @@ endif
 vim9script
 
 
-if exists('g:vim9cutlass_loaded')
-    finish
-endif
-
 g:vim9cutlass_loaded = 1
-
 
 g:vim9cutlass_cut = get(g:, 'vim9cutlass_cut', v:null)
 
