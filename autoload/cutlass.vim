@@ -53,7 +53,7 @@ enddef
 def OverrideSelectMappings()
     var mode = 's'
 
-    var code = 33
+    var code = 33 # ASCII printable characters codes: 33-126
     while code <= 126
         var lhs = escape(nr2char(code), '|')
         if CanMap(mode, lhs)
