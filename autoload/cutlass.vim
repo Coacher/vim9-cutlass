@@ -68,7 +68,7 @@ def OverrideSelectMappings()
         endif
     endfor
 
-    for lhs in ['<BS>', '<C-H>']
+    for lhs in ['<BS>', '<Del>', '<C-H>']
         if CanMap(mode, lhs)
             CreateMapping(mode, lhs, '<C-O>"' .. g:vim9cutlass_registers.select .. 'c')
         endif
