@@ -83,10 +83,6 @@ enddef
 
 
 export def CreateCutMappings()
-    if g:vim9cutlass_cut == v:null
-        return
-    endif
-
     CreateMapping('n', g:vim9cutlass_cut, 'd')
     CreateMapping('x', g:vim9cutlass_cut, 'd')
     CreateMapping('n', g:vim9cutlass_cut .. g:vim9cutlass_cut, 'dd')

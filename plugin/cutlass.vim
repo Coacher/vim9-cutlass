@@ -26,4 +26,7 @@ g:vim9cutlass_registers = get(
 import '../autoload/cutlass.vim'
 
 cutlass.OverrideDefaultMappings()
-cutlass.CreateCutMappings()
+
+if g:vim9cutlass_cut != v:null
+    cutlass.CreateCutMappings()
+endif
