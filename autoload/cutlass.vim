@@ -86,5 +86,5 @@ export def CreateCutMappings()
     CreateMapping('n', g:vim9cutlass_cut, 'd')
     CreateMapping('x', g:vim9cutlass_cut, 'd')
     CreateMapping('n', g:vim9cutlass_cut .. g:vim9cutlass_cut, 'dd')
-    CreateMapping('n', g:vim9cutlass_cut -> toupper(), 'D')
+    CreateMapping('n', toupper(g:vim9cutlass_cut), 'D')
 enddef
