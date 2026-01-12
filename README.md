@@ -9,7 +9,7 @@ See also [vim9-buckler](https://github.com/Coacher/vim9-buckler).
 Related plugins
 ===============
 
-* [cutlass.nvim](https://github.com/gbprod/cutlass.nvim) for Neovim.
+* [neovim-cutlass](https://github.com/Coacher/neovim-cutlass) for Neovim.
   Actively maintained.
 
 * [vim-cutlass](https://github.com/svermeulen/vim-cutlass) for Vim 8.
