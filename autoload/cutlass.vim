@@ -34,9 +34,16 @@ enddef
 
 def OverrideDeleteMappings()
     for mode in ['n', 'x']
-        for lhs in ['d', 'D', 'x', 'X', '<Del>']
+        for lhs in ['d', 'D', 'x', 'X']
             if CanMap(mode, lhs)
                 RedirectToRegister(mode, lhs, g:vim9cutlass_registers.delete)
+            endif
+        endfor
+
+        # Normal mode <Del> ignores the register prefix, use equivalent x
+        for lhs in ['<Del>', '<kDel>']
+            if CanMap(mode, lhs)
+                CreateMapping(mode, lhs, '"' .. g:vim9cutlass_registers.delete .. 'x')
             endif
         endfor
     endfor
