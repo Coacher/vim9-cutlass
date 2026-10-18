@@ -1,8 +1,9 @@
 vim9-cutlass
 ============
 
-This Vim9 plugin redirects the delete operations to the black hole register
-and provides a convenient way to create a new mapping for the cut operation.
+This Vim9 plugin redirects the text removed by change, delete, and Visual put
+operations to the black hole register and provides a convenient way to create
+a new mapping for the cut operation.
 
 See also [vim9-buckler](https://github.com/Coacher/vim9-buckler).
 
