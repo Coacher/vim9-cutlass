@@ -132,7 +132,7 @@ def RestorePutRegisters(reg: string)
             setreg(name, info)
         endif
     endfor
-    setreg('"', {points_to: put_registers['"'].points_to})
+    setreg('"', {points_to: get(put_registers['"'], 'points_to', '0')})
     if !empty(put_replaced)
         setreg(reg, put_replaced)
     endif
