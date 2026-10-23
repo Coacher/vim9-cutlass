@@ -17,8 +17,9 @@ pattern and every register afterwards.
 
 The expected outcome is defined by vanilla Vim, never by hand: the plugin
 run of `{keys}` must equal the vanilla run of `"R{keys}`, where R is the
-configured register. This includes the unnamed register pointing to R
-afterwards and the numbered registers shifting as vanilla Vim shifts them.
+configured register, or of `CTRL-R R {keys}` for text typed over a Select
+mode selection. This includes the unnamed register pointing to R afterwards
+and the numbered registers shifting as vanilla Vim shifts them.
 
 Keys that vanilla Vim would read differently, such as a Select mode key or
 the delete key that ignores register prefixes, carry a separate vanilla
