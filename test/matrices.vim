@@ -747,6 +747,78 @@ def History(ctx: dict<any>): list<dict<any>>
 enddef
 
 
+# Operations that cross mode boundaries before or after the key the plugin
+# maps: Visual kind switches, Select and Visual hand-overs, Insert and
+# Replace excursions.  Templates mark the mapped keys with {mode:key}.
+const mode_templates: list<string> = [
+    "vjV{x:d}", "Vjv{x:D}", "vj\<C-V>{x:d}", "\<C-V>jlv{x:d}", "\<C-V>jlV{x:c}",
+    "vjo{x:d}", "vjO{x:c}", "\<C-V>jlO{x:d}", "\<C-V>jlo{x:x}",
+    "ve\<Esc>gv{x:d}", "vj\<Esc>0gv{x:c}", "ve\<Esc>jgv{x:x}",
+    "ve\<C-G>\<C-O>{x:d}", "ve\<C-G>\<C-G>{x:d}", "ve\<C-G>\<C-O>\<C-G>{s:X}",
+    "gh\<C-O>{x:d}", "gH\<C-O>{x:c}", "ve\<C-G>\<Esc>{n:d}w", "ve\<C-G>\<Esc>{n:x}",
+    "vjv{n:d}w", "Vj\<Esc>{n:dd}", "\<C-V>jl\<Esc>{n:x}",
+    "ihello\<Esc>{n:d}w", "ihello\<C-O>{n:d}w", "i\<C-\>\<C-O>{n:d}w", "i\<C-O>vj{x:d}",
+    "i\<C-O>V{x:d}", "i\<C-O>ve{x:c}", "i\<C-O>{n:dd}", "i\<C-O>{n:x}", "i\<C-O>{n:X}",
+    "A\<C-O>{n:D}", "I\<C-O>{n:C}", "a\<C-O>{n:s}", "o\<C-O>{n:S}",
+    "ihello\<C-O>ve{x:p}", "i\<C-O>Vj{x:p}",
+    "R\<C-O>{n:x}", "Rab\<C-O>{n:d}w", "gR\<C-O>{n:d}w", "gRab\<C-O>{n:x}",
+    "i\<C-O>ve\<C-G>{s:X}", "i\<C-O>gh{s:X}", "R\<C-O>ve\<C-G>{s:X}",
+    "vj:'<,'>delete\<CR>", "Vj:delete\<CR>", "Vj:normal {x:d}\<CR>",
+    "{n:d}vj", "{n:d}Vw", "{n:d}\<C-V>j", "{n:c}vj", "{n:d}v$", "{n:c}viw",
+    "ve{x:d}{n:d}w", "ve{x:c}NEW\<Esc>{n:x}", "ve\<C-G>{s:X}\<Esc>{n:dd}",
+    "ve{x:d}ve{x:p}", "{n:dd}Vj{x:p}",
+    "ve\<C-G>{s:X}\<C-O>{n:d}w", "ve\<C-G>{s:X}\<Esc>ve\<C-G>{s:X}",
+]
+
+def Modes(ctx: dict<any>): list<dict<any>>
+    var cases: list<dict<any>> = []
+    for combo in Product([
+            ['template', mode_templates],
+            ['fixture', ['ascii', 'multibyte', 'single']],
+    ])
+        var built = Expand(ctx, combo.template)
+        add(cases, Case('modes', [strtrans(built.keys), combo.fixture], extend({fixture: combo.fixture}, built)))
+    endfor
+    return cases
+enddef
+
+
+# The cut mappings: they behave like the delete keys of vanilla Vim and
+# only exist when g:vim9cutlass_cut is set.  The cut key shadows the mark
+# command and its upper case form is a motion after an operator.
+def Cut(ctx: dict<any>): list<dict<any>>
+    var cut = get(ctx.config, 'cut', v:null)
+    if cut == v:null
+        return []
+    endif
+    var upper = toupper(cut)
+    var templates: list<list<string>> = [
+        [cut .. 'w', 'dw'], [cut .. 'iw', 'diw'], [cut .. '2j', 'd2j'], ['2' .. cut .. 'w', '2dw'],
+        [cut .. cut, 'dd'], ['3' .. cut .. cut, '3dd'], [upper, 'D'], ['2' .. upper, '2D'],
+        ['ve' .. cut, 'ved'], ['Vj' .. cut, 'Vjd'], ["\<C-V>jl" .. cut, "\<C-V>jld"],
+        ['"a' .. cut .. 'w', '"adw'], ['"A' .. cut .. cut, '"Add'], ['"+' .. upper, '"+D'], ['"_' .. cut .. 'w', '"_dw'],
+        [cut .. 'w.', 'dw.'], [cut .. cut .. 'j.', 'ddj.'], [cut .. 'wu', 'dwu'],
+        ["i\<C-O>" .. cut .. 'w', "i\<C-O>dw"], ["ve\<C-G>\<C-O>" .. cut, "ve\<C-G>\<C-O>d"],
+        [cut .. 'w' .. 'p', 'dwp'], ['ve' .. cut .. 'P', 'vedP'],
+        [cut .. upper, 'd' .. upper], ['ma' .. cut .. 'w', 'da' .. cut .. 'w'],
+    ]
+    var cases: list<dict<any>> = []
+    for combo in Product([
+            ['template', templates],
+            ['fixture', ['ascii', 'multibyte']],
+    ])
+        var [keys, vanilla] = combo.template
+        add(cases, Case('cut', [strtrans(keys), combo.fixture], {
+            fixture: combo.fixture,
+            keys: keys,
+            vanilla: vanilla,
+            register: '',
+        }))
+    endfor
+    return cases
+enddef
+
+
 export def Cases(ctx: dict<any>): list<dict<any>>
     var cases: list<dict<any>> = []
     extend(cases, Operators(ctx))
@@ -758,5 +830,7 @@ export def Cases(ctx: dict<any>): list<dict<any>>
     extend(cases, Registers(ctx))
     extend(cases, Settings(ctx))
     extend(cases, History(ctx))
+    extend(cases, Modes(ctx))
+    extend(cases, Cut(ctx))
     return cases
 enddef
