@@ -1,0 +1,29 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  suite:
+    name: ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - debian:stable
+          - ubuntu:latest
+          - ubuntu:rolling
+          - fedora:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the suite in Docker
+        run: test/docker.sh "${{ matrix.image }}"
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-${{ matrix.image }}
+          path: test/results
+          if-no-files-found: ignore
