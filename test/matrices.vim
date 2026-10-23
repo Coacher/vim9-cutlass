@@ -17,6 +17,7 @@ vim9script
 #                 registers, when they differ from vanilla
 #   register      the register the plugin redirects the text to, '' when
 #                 it leaves the key alone
+#   known         the accepted plugin limitation that makes the case fail
 #   needs         has() features the case requires
 
 import './fixtures.vim' as fx
@@ -108,6 +109,7 @@ def Case(matrix: string, parts: list<any>, spec: dict<any>): dict<any>
         seed: 'plain',
         settings: {},
         register: '_',
+        known: '',
     }, spec)
     if !has_key(case, 'vanilla_regs')
         case.vanilla_regs = case.vanilla
@@ -307,6 +309,7 @@ def Select(ctx: dict<any>): list<dict<any>>
             vanilla: prelude .. combo.key.key,
             vanilla_regs: prelude .. SelectPrefix(register) .. combo.key.key,
             register: register,
+            known: get(combo.key, 'known', ''),
         }))
     endfor
     return cases

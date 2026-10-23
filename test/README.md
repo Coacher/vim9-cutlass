@@ -30,6 +30,13 @@ hand-written expectation unnecessary. Cases that fail show the field by
 field difference between what vanilla Vim produced and what the plugin
 produced.
 
+A case can carry a known mark naming an accepted plugin limitation. Such a
+case is reported as known rather than failed, counted apart in the summary
+and exported as skipped in the JUnit report, so it does not fail the run.
+A marked case that passes fails the run instead, which keeps the marks
+honest. The mark sits on the axis value that produces the cases, next to
+what it concerns.
+
 Matrices
 --------
 
