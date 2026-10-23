@@ -209,7 +209,7 @@ def XmlEscape(text: string): string
 enddef
 
 def WriteReports(results: list<dict<any>>, run: string)
-    var counts = {PASS: 0, FAIL: 0, SKIP: 0}
+    var counts = {PASS: 0, FAIL: 0, SKIP: 0, KNOWN: 0}
     var report: list<string> = []
     var xml: list<string> = ['<?xml version="1.0" encoding="UTF-8"?>']
     var cases: list<string> = []
@@ -221,6 +221,9 @@ def WriteReports(results: list<dict<any>>, run: string)
         elseif result.status == 'SKIP'
             add(cases, printf('  <testcase classname="%s" name="%s"><skipped message="%s"/></testcase>',
                 XmlEscape(run), name, XmlEscape(result.reason)))
+        elseif result.status == 'KNOWN'
+            add(cases, printf('  <testcase classname="%s" name="%s"><skipped type="known" message="%s"/></testcase>',
+                XmlEscape(run), name, XmlEscape(result.known)))
         else
             var detail = join(result.diffs, "\n")
             add(report, 'FAIL ' .. result.id)
@@ -238,11 +241,20 @@ def WriteReports(results: list<dict<any>>, run: string)
     for [reason, count] in items(skips)
         add(report, printf('SKIP %d cases: %s', count, reason))
     endfor
-    add(report, printf('SUMMARY %s: %d passed, %d failed, %d skipped, clipboard %s',
-        run, counts.PASS, counts.FAIL, counts.SKIP,
+    var knowns: dict<number> = {}
+    for result in results
+        if result.status == 'KNOWN'
+            knowns[result.known] = get(knowns, result.known, 0) + 1
+        endif
+    endfor
+    for [reason, count] in items(knowns)
+        add(report, printf('KNOWN %d cases: %s', count, reason))
+    endfor
+    add(report, printf('SUMMARY %s: %d passed, %d failed, %d skipped, %d known, clipboard %s',
+        run, counts.PASS, counts.FAIL, counts.SKIP, counts.KNOWN,
         ctx.clipboard_working ? 'working' : (ctx.clipboard ? 'present' : 'absent')))
     add(xml, printf('<testsuite name="%s" tests="%d" failures="%d" skipped="%d">',
-        XmlEscape(run), len(results), counts.FAIL, counts.SKIP))
+        XmlEscape(run), len(results), counts.FAIL, counts.SKIP + counts.KNOWN))
     extend(xml, cases)
     add(xml, '</testsuite>')
     writefile(report, results_dir .. '/report.txt')
@@ -285,10 +297,19 @@ def Main()
         var expected = extend(copy(vanilla[case.id]), {registers: registers[case.id].registers})
         var diffs: list<string> = []
         Diff(expected, plugin, '', diffs)
+        var status = empty(diffs) ? 'PASS' : 'FAIL'
+        if !empty(case.known)
+            # A marked case has to keep failing, or its mark is stale
+            status = empty(diffs) ? 'FAIL' : 'KNOWN'
+            if empty(diffs)
+                add(diffs, 'known failure passes: ' .. case.known)
+            endif
+        endif
         var result = {
             id: case.id, matrix: case.matrix,
-            status: empty(diffs) ? 'PASS' : 'FAIL',
+            status: status,
             diffs: diffs,
+            known: case.known,
             keys: strtrans(case.keys), vanilla: strtrans(case.vanilla),
         }
         if !empty(diffs)
