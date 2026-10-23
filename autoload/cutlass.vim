@@ -30,6 +30,14 @@ def OverrideChangeMappings()
             endif
         endfor
     endfor
+
+    for mode in ['x']
+        for lhs in ['R']
+            if CanMap(mode, lhs)
+                RedirectToRegister(mode, lhs, g:vim9cutlass_registers.change)
+            endif
+        endfor
+    endfor
 enddef
 
 def OverrideDeleteMappings()
