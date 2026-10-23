@@ -35,7 +35,9 @@ case is reported as known rather than failed, counted apart in the summary
 and exported as skipped in the JUnit report, so it does not fail the run.
 A marked case that passes fails the run instead, which keeps the marks
 honest. The mark sits on the axis value that produces the cases, next to
-what it concerns.
+what it concerns. One limitation is marked: typing a character outside
+printable ASCII over a Select mode selection, which the plugin does not
+map.
 
 Matrices
 --------
