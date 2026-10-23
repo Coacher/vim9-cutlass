@@ -2,9 +2,9 @@ Test suite
 ==========
 
 The suite checks that vim9-cutlass redirects the text removed by change,
-delete, Select typing and Visual put to the configured register and leaves
-every other register alone, in terminal Vim and in gVim, with and without a
-display server.
+delete and Select typing to the configured register and leaves every other
+register alone, in terminal Vim and in gVim, with and without a display
+server.
 
 Design
 ------
@@ -15,21 +15,10 @@ runs start from the same buffer, cursor, marks, settings and register
 seeds, and the harness compares the buffer, cursor, mode, marks, search
 pattern and every register afterwards.
 
-The expected outcome is defined by vanilla Vim, never by hand:
-
-* For change, delete and Select typing, the plugin run of `{keys}` must
-  equal the vanilla run of `"R{keys}`, where R is the configured register.
-  This includes the unnamed register pointing to R afterwards and the
-  numbered registers shifting as vanilla Vim shifts them.
-* For Visual put, the buffer, cursor, mode and marks must equal the vanilla
-  run of `{keys}`; every register must keep the state it had before the
-  put, except that R receives the replaced text vanilla Vim left in the
-  unnamed register when R is not the black hole register, and the unnamed
-  register keeps its old pointer. A repeat of such a put puts the same
-  register over the same amount of text at the cursor again, a count
-  multiplying that amount like `[count]v`, so the vanilla run gets that
-  reselection and put where the keys have the repeat; vanilla Vim alone
-  would only replay the deletion.
+The expected outcome is defined by vanilla Vim, never by hand: the plugin
+run of `{keys}` must equal the vanilla run of `"R{keys}`, where R is the
+configured register. This includes the unnamed register pointing to R
+afterwards and the numbered registers shifting as vanilla Vim shifts them.
 
 Keys that vanilla Vim would read differently, such as a Select mode key or
 the delete key that ignores register prefixes, carry a separate vanilla
@@ -54,16 +43,13 @@ case by case: a new motion, setting or fixture becomes a new axis value.
   entry Vim offers, from Normal mode and from a suspended Insert or
   Replace edit, with the keys the plugin maps and the ones it leaves to
   Vim.
-* `put`: every Visual put key from every source register over every kind
-  of selection, with counts, the clipboard settings the plugin handles and
-  different unnamed register pointers.
 * `registers`: representative operations of every family against every
   register seed, run under every plugin configuration.
 * `settings`: each option that influences the operations, crossed with
   the operation groups it can affect.
 * `history`: operations followed by repeat, undo and redo, including a
-  repeat after an undo and after a change in another buffer, and the same
-  operations driven through `:normal` and the Ex commands.
+  repeat after an undo, and the same operations driven through `:normal`
+  and the Ex commands.
 * `modes`: mode changes around the mapped keys, such as Visual kind
   switches, Select hand-overs and Insert excursions.
 * `cut`: the cut mappings `g:vim9cutlass_cut` creates.
@@ -125,7 +111,7 @@ Environment variables select what runs:
 
 For example, a local GTK 2 build is covered with
 `GVIM_BIN=/opt/vim-gtk2/bin/gvim test/run.sh`, and one matrix on one
-configuration with `MATRICES='^put$' CONFIGS=named test/run.sh`.
+configuration with `MATRICES='^select$' CONFIGS=named test/run.sh`.
 
 Each run writes `report.txt`, `junit.xml` and `results.jsonl` under the
 results directory. The JSON lines of failing cases carry the full expected

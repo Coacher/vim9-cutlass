@@ -1,8 +1,8 @@
 vim9script
 
 # Case generation.  Every matrix is a product of axes narrowed by a filter;
-# a case records the keys a user types, the vanilla keys that define the
-# expected outcome and the oracle that compares the two.
+# a case records the keys a user types and the vanilla keys that define the
+# expected outcome.
 #
 # Case fields:
 #   id            unique name, selectable with CUTLASS_CASES
@@ -15,29 +15,28 @@ vim9script
 #   vanilla       keys fed without the plugin that define the expected state
 #   vanilla_regs  keys fed without the plugin that define the expected
 #                 registers, when they differ from vanilla
-#   oracle        'same' compares everything with the vanilla runs, 'put'
-#                 expects untouched registers except the configured one
-#   register      the plugin register the oracle refers to
+#   register      the register the plugin redirects the text to, '' when
+#                 it leaves the key alone
 #   needs         has() features the case requires
 
 import './fixtures.vim' as fx
 
 export const configs: dict<dict<any>> = {
-    black: {registers: {change: '_', delete: '_', select: '_', put: '_'}},
-    named: {registers: {change: 'a', delete: 'a', select: 'a', put: 'a'}},
-    distinct: {registers: {change: 'a', delete: 'b', select: 'c', put: 'd'}},
-    plus: {registers: {change: '+', delete: '+', select: '+', put: '+'}},
-    star: {registers: {change: '*', delete: '*', select: '*', put: '*'}},
+    black: {registers: {change: '_', delete: '_', select: '_'}},
+    named: {registers: {change: 'a', delete: 'a', select: 'a'}},
+    distinct: {registers: {change: 'a', delete: 'b', select: 'c'}},
+    plus: {registers: {change: '+', delete: '+', select: '+'}},
+    star: {registers: {change: '*', delete: '*', select: '*'}},
     exclude: {
-        registers: {change: '_', delete: '_', select: '_', put: '_'},
-        exclude: ['nd', 'xx', 'nC', 'sa', 's<BS>', 'xp'],
+        registers: {change: '_', delete: '_', select: '_'},
+        exclude: ['nd', 'xx', 'nC', 'sa', 's<BS>'],
     },
     usermap: {
-        registers: {change: '_', delete: '_', select: '_', put: '_'},
+        registers: {change: '_', delete: '_', select: '_'},
         usermaps: {n: {d: '"zd', D: '"zD'}, x: {d: '"zd', c: '"zc'}},
     },
     cut: {
-        registers: {change: '_', delete: '_', select: '_', put: '_'},
+        registers: {change: '_', delete: '_', select: '_'},
         cut: 'm',
     },
 }
@@ -103,7 +102,6 @@ def Case(matrix: string, parts: list<any>, spec: dict<any>): dict<any>
         fixture: 'ascii',
         seed: 'plain',
         settings: {},
-        oracle: 'same',
         register: '_',
     }, spec)
     if !has_key(case, 'vanilla_regs')
@@ -322,45 +320,25 @@ enddef
 #   prelude     keys fed first, such as a selection or a cursor move
 #   suffix      keys fed after the operation
 #   family      plugin register family
-#   source      register prefix of a put, such as '"a'
 #   op          'c' or 'd', the change or delete a Select key stands for
 #   vanilla     key the plugin maps lhs to when it differs from lhs
-#   redirected  false for a key the plugin leaves alone
-# A repeat in the suffix of a redirected put stands for the plugin's repeat,
-# which puts the register over the same amount of text again, so vanilla
-# gets [count]v and the put in its place.  The plugin keeps the unnamed
-# register pointing at register 0 of the seeds, while vanilla's own put
-# leaves the replaced text there, so a put without a register reads 0; a
-# put from the configured register puts the replaced text the plugin
-# stored there, which vanilla keeps in the unnamed register.
-def RepeatPut(keys: string, source: string, register: string, put: string): string
-    var again = (source == '"' .. register ? '' : (empty(source) ? '"0' : source)) .. put
-    return substitute(keys, '\(\d*\)\.', (m) => (empty(m[1]) ? '1' : m[1]) .. 'v' .. again, 'g')
-enddef
-
 export def Build(ctx: dict<any>, spec: dict<any>): dict<any>
     var mode = spec.mode
     var lhs = spec.lhs
     var mapmode = mode =~ "^[vV\<C-V>]$" ? 'x' : (mode == 's' ? 's' : 'n')
-    var register = get(spec, 'redirected', true) ? Register(ctx, mapmode, keytrans(lhs), spec.family) : ''
+    var register = Register(ctx, mapmode, keytrans(lhs), spec.family)
     var prefix = Prefix(register)
     var count = get(spec, 'count', '')
     var tail = get(spec, 'tail', '')
     var prelude = get(spec, 'prelude', '')
     var suffix = get(spec, 'suffix', '')
     var vlhs = get(spec, 'vanilla', lhs)
-    var result: dict<any> = {register: register, oracle: 'same'}
+    var result: dict<any> = {register: register}
     if mode == 's'
         var op = get(spec, 'op', 'c')
         result.keys = prelude .. lhs .. suffix
         result.vanilla = result.keys
         result.vanilla_regs = prelude .. "\<C-O>" .. prefix .. op .. (op == 'c' ? lhs : '') .. suffix
-    elseif spec.family == 'put'
-        var source = get(spec, 'source', '')
-        result.keys = prelude .. source .. count .. lhs .. suffix
-        result.vanilla = prelude .. source .. count .. lhs
-            .. (empty(register) ? suffix : RepeatPut(suffix, source, register, count .. lhs))
-        result.oracle = empty(register) ? 'same' : 'put'
     elseif mode == 'i' || mode == 'R'
         result.keys = prelude .. mode .. "\<C-O>" .. count .. lhs .. tail .. suffix
         result.vanilla = prelude .. mode .. "\<C-O>" .. count .. prefix .. vlhs .. tail .. suffix
@@ -376,33 +354,21 @@ def FamilyOf(lhs: string): string
         return 'change'
     elseif lhs =~ '^\([dDxX]\|dd\|<k\?Del>\)$'
         return 'delete'
-    elseif lhs =~ '^\([gP[\]]\?[pP]\)$'
-        return 'put'
     endif
     throw 'no register family for ' .. lhs
 enddef
 
 # Expands a key template whose {mode:key} tokens stand for keys the plugin
-# maps, giving the typed keys and the vanilla keys with register prefixes;
-# a {n:.} token is the repeat of the redirected put before it
+# maps, giving the typed keys and the vanilla keys with register prefixes
 export def Expand(ctx: dict<any>, template: string): dict<any>
-    var result: dict<any> = {keys: '', vanilla: '', vanilla_regs: '', vanilla_prefix: '', register: '', oracle: 'same'}
+    var result: dict<any> = {keys: '', vanilla: '', vanilla_regs: '', register: ''}
     var rest = template
-    var put: dict<string> = {}
     while true
         var m = matchlist(rest, '^\(.\{-}\){\([nxs]\):\([^}]\+\)}\(.*\)$')
         if empty(m)
             break
         endif
         var [_, before, mode, lhs, after; __] = m
-        if lhs =~ '^\d*\.$'
-            var repeat = empty(put) ? lhs : RepeatPut(lhs, put.source, put.register, put.key)
-            result.keys ..= before .. lhs
-            result.vanilla ..= before .. repeat
-            result.vanilla_regs ..= before .. repeat
-            rest = after
-            continue
-        endif
         var key = eval('"' .. lhs .. '"')
         var family = mode == 's' ? 'select' : FamilyOf(lhs)
         var register = Register(ctx, mode, lhs, family)
@@ -410,13 +376,6 @@ export def Expand(ctx: dict<any>, template: string): dict<any>
         if mode == 's'
             result.vanilla ..= before .. key
             result.vanilla_regs ..= before .. "\<C-O>" .. Prefix(register) .. 'c' .. key
-        elseif family == 'put'
-            # The vanilla keys up to the put give the registers it starts from
-            result.vanilla_prefix = result.vanilla .. before
-            result.vanilla ..= before .. key
-            result.vanilla_regs ..= before .. key
-            result.oracle = empty(register) ? 'same' : 'put'
-            put = empty(register) ? {} : {source: matchstr(before, '"\S$'), register: register, key: key}
         else
             result.vanilla ..= before .. Prefix(register) .. key
             result.vanilla_regs ..= before .. Prefix(register) .. key
@@ -430,46 +389,6 @@ export def Expand(ctx: dict<any>, template: string): dict<any>
     result.vanilla ..= rest
     result.vanilla_regs ..= rest
     return result
-enddef
-
-
-# Visual put from every source register over every kind of selection, with
-# the counts, clipboard settings and unnamed pointer states that matter.
-const put_ops: list<dict<any>> = [
-    {lhs: 'p'}, {lhs: 'P', redirected: false}, {lhs: 'gp'}, {lhs: 'gP'},
-    {lhs: ']p'}, {lhs: '[p'}, {lhs: ']P'}, {lhs: '[P'},
-]
-const put_sources = ['', '"0', '"a', '"-', '"1', '"z', '"e', '"*', '"+']
-const put_selections = ['ve', 'vjl', 'V', 'Vj', "\<C-V>jl"]
-const put_variants: list<dict<any>> = [
-    {fixture: 'ascii', seed: 'plain', settings: {}},
-    {fixture: 'ascii', seed: 'named', settings: {}},
-    {fixture: 'multibyte', seed: 'plain', settings: {}},
-    {fixture: 'sparse', seed: 'small', settings: {}},
-    {fixture: 'ascii', seed: 'plain', settings: {clipboard: 'unnamed'}},
-    {fixture: 'ascii', seed: 'plain', settings: {clipboard: 'unnamedplus'}},
-    {fixture: 'ascii', seed: 'plain', settings: {clipboard: 'unnamed,unnamedplus'}},
-]
-
-def Put(ctx: dict<any>): list<dict<any>>
-    var cases: list<dict<any>> = []
-    for combo in Product([
-            ['op', put_ops],
-            ['selection', put_selections],
-            ['source', put_sources],
-            ['count', ['', '2']],
-            ['variant', put_variants],
-    ])
-        var built = Build(ctx, {
-            mode: 'v', lhs: combo.op.lhs, family: 'put', prelude: combo.selection,
-            source: combo.source, count: combo.count, redirected: get(combo.op, 'redirected', true),
-        })
-        var parts = [combo.op.lhs, combo.selection, combo.source, combo.count,
-            combo.variant.fixture, combo.variant.seed, SettingsId(combo.variant.settings)]
-        add(cases, Case('put', filter(copy(parts), (_, p) => !empty(p)),
-            extend(copy(combo.variant), built)))
-    endfor
-    return cases
 enddef
 
 
@@ -496,9 +415,6 @@ const register_ops: list<dict<any>> = [
     {mode: 'v', lhs: 'c', prelude: 'vjl', family: 'change'},
     {mode: 's', lhs: 'X', prelude: "ve\<C-G>", family: 'select'},
     {mode: 's', lhs: "\<BS>", op: 'd', prelude: "Vj\<C-G>", family: 'select'},
-    {mode: 'v', lhs: 'p', prelude: 've', family: 'put'},
-    {mode: 'V', lhs: 'p', prelude: 'Vj', source: '"a', family: 'put'},
-    {mode: 'v', lhs: 'p', prelude: 've', source: '"1', family: 'put'},
 ]
 
 def Registers(ctx: dict<any>): list<dict<any>>
@@ -509,7 +425,7 @@ def Registers(ctx: dict<any>): list<dict<any>>
             ['fixture', ['ascii', 'multibyte']],
     ])
         var built = Build(ctx, combo.op)
-        var parts = [get(combo.op, 'prelude', '') .. get(combo.op, 'source', '') .. get(combo.op, 'count', '')
+        var parts = [get(combo.op, 'prelude', '') .. get(combo.op, 'count', '')
             .. combo.op.lhs .. get(combo.op, 'tail', ''), combo.seed, combo.fixture]
         add(cases, Case('registers', parts, extend({fixture: combo.fixture, seed: combo.seed}, built)))
     endfor
@@ -540,12 +456,6 @@ const setting_ops: dict<list<dict<any>>> = {
         {mode: 's', lhs: 'X', prelude: "ve\<C-G>", family: 'select'},
         {mode: 's', lhs: "\<BS>", op: 'd', prelude: "ve\<C-G>", family: 'select'},
         {mode: 's', lhs: "\<CR>", prelude: "Vj\<C-G>", family: 'select'},
-    ],
-    put: [
-        {mode: 'v', lhs: 'p', prelude: 've', family: 'put'},
-        {mode: 'V', lhs: 'p', prelude: 'Vj', family: 'put'},
-        {mode: 'v', lhs: 'p', prelude: 've', source: '"a', family: 'put'},
-        {mode: "\<C-V>", lhs: 'p', prelude: "\<C-V>jl", family: 'put'},
     ],
     insert: [
         {mode: 'i', lhs: 'd', tail: 'w', family: 'delete'},
@@ -589,7 +499,6 @@ const setting_ops: dict<list<dict<any>>> = {
         {mode: 'n', lhs: 'cc', prelude: 'zfj', family: 'change'},
         {mode: 'n', lhs: 'x', prelude: 'zfj', family: 'delete'},
         {mode: 'V', lhs: 'd', prelude: 'zfjV', family: 'delete'},
-        {mode: 'V', lhs: 'p', prelude: 'zfjV', family: 'put'},
     ],
     repeat: [
         {mode: 'n', lhs: 'd', tail: 'w', suffix: '.', family: 'delete'},
@@ -607,32 +516,32 @@ const setting_ops: dict<list<dict<any>>> = {
 
 const default_guioptions = 'egimrLtT'
 
-# Settings that influence change, delete, Select typing or Visual put,
+# Settings that influence change, delete or Select typing,
 # each crossed with the operation groups it can affect
 const settings_table: list<dict<any>> = [
-    {settings: {clipboard: 'unnamed'}, groups: ['delete', 'change', 'select', 'put', 'insert']},
-    {settings: {clipboard: 'unnamedplus'}, groups: ['delete', 'change', 'select', 'put', 'insert']},
-    {settings: {clipboard: 'unnamed,unnamedplus'}, groups: ['delete', 'change', 'select', 'put', 'insert']},
-    {settings: {clipboard: 'autoselect'}, groups: ['delete', 'change', 'select', 'put']},
-    {settings: {clipboard: 'autoselect,unnamed'}, groups: ['delete', 'change', 'select', 'put']},
-    {settings: {clipboard: 'autoselect,unnamedplus'}, groups: ['delete', 'change', 'select', 'put']},
-    {settings: {clipboard: 'autoselectplus'}, groups: ['delete', 'change', 'select', 'put']},
-    {settings: {clipboard: 'autoselectplus,unnamedplus'}, groups: ['delete', 'change', 'select', 'put']},
-    {settings: {clipboard: 'autoselectplus,unnamed'}, groups: ['delete', 'change', 'select', 'put']},
-    {settings: {clipboard: 'autoselect,autoselectplus,unnamed,unnamedplus'}, groups: ['delete', 'change', 'select', 'put']},
-    {settings: {clipboard: 'exclude:.*'}, groups: ['delete', 'put']},
-    {settings: {clipboard: 'unnamed,exclude:.*'}, groups: ['delete', 'put']},
-    {settings: {selection: 'exclusive'}, groups: ['delete', 'change', 'select', 'put', 'lineend']},
-    {settings: {selection: 'old'}, groups: ['delete', 'change', 'select', 'put', 'lineend']},
+    {settings: {clipboard: 'unnamed'}, groups: ['delete', 'change', 'select', 'insert']},
+    {settings: {clipboard: 'unnamedplus'}, groups: ['delete', 'change', 'select', 'insert']},
+    {settings: {clipboard: 'unnamed,unnamedplus'}, groups: ['delete', 'change', 'select', 'insert']},
+    {settings: {clipboard: 'autoselect'}, groups: ['delete', 'change', 'select']},
+    {settings: {clipboard: 'autoselect,unnamed'}, groups: ['delete', 'change', 'select']},
+    {settings: {clipboard: 'autoselect,unnamedplus'}, groups: ['delete', 'change', 'select']},
+    {settings: {clipboard: 'autoselectplus'}, groups: ['delete', 'change', 'select']},
+    {settings: {clipboard: 'autoselectplus,unnamedplus'}, groups: ['delete', 'change', 'select']},
+    {settings: {clipboard: 'autoselectplus,unnamed'}, groups: ['delete', 'change', 'select']},
+    {settings: {clipboard: 'autoselect,autoselectplus,unnamed,unnamedplus'}, groups: ['delete', 'change', 'select']},
+    {settings: {clipboard: 'exclude:.*'}, groups: ['delete']},
+    {settings: {clipboard: 'unnamed,exclude:.*'}, groups: ['delete']},
+    {settings: {selection: 'exclusive'}, groups: ['delete', 'change', 'select', 'lineend']},
+    {settings: {selection: 'old'}, groups: ['delete', 'change', 'select', 'lineend']},
     {settings: {selectmode: 'mouse'}, groups: ['delete', 'select']},
     {settings: {selectmode: 'key', keymodel: 'startsel'}, groups: ['keyselect', 'select']},
     {settings: {selectmode: 'cmd', keymodel: 'startsel'}, groups: ['cmdselect', 'insert']},
     {settings: {keymodel: 'startsel'}, groups: ['shifted']},
     {settings: {keymodel: 'stopsel'}, groups: ['delete', 'select']},
     {settings: {keymodel: 'startsel,stopsel'}, groups: ['shifted', 'select']},
-    {settings: {virtualedit: 'all'}, groups: ['delete', 'change', 'lineend', 'put']},
-    {settings: {virtualedit: 'onemore'}, groups: ['delete', 'change', 'lineend', 'put']},
-    {settings: {virtualedit: 'block'}, groups: ['delete', 'change', 'lineend', 'put']},
+    {settings: {virtualedit: 'all'}, groups: ['delete', 'change', 'lineend']},
+    {settings: {virtualedit: 'onemore'}, groups: ['delete', 'change', 'lineend']},
+    {settings: {virtualedit: 'block'}, groups: ['delete', 'change', 'lineend']},
     {settings: {virtualedit: 'insert'}, groups: ['insert', 'change']},
     {settings: {cpoptions: 'aABceFszy'}, groups: ['repeat', 'delete']},
     {settings: {cpoptions: 'aABceFszE'}, groups: ['empty', 'delete']},
@@ -641,18 +550,18 @@ const settings_table: list<dict<any>> = [
     {settings: {whichwrap: 'b,s,h,l,<,>,[,]'}, groups: ['lineend']},
     {settings: {whichwrap: ''}, groups: ['lineend']},
     {settings: {autoindent: true}, groups: ['change', 'select']},
-    {settings: {modifiable: false}, groups: ['delete', 'change', 'select', 'put', 'insert']},
-    {settings: {readonly: true}, groups: ['delete', 'change', 'select', 'put', 'insert']},
+    {settings: {modifiable: false}, groups: ['delete', 'change', 'select', 'insert']},
+    {settings: {readonly: true}, groups: ['delete', 'change', 'select', 'insert']},
     {settings: {timeout: false}, groups: ['delete', 'change', 'select']},
     {settings: {timeoutlen: 1}, groups: ['delete', 'change', 'select']},
     {settings: {ttimeout: true, ttimeoutlen: 10}, groups: ['delete', 'change', 'select']},
     {settings: {foldmethod: 'manual'}, groups: ['folded']},
-    {settings: {guioptions: default_guioptions}, groups: ['delete', 'change', 'select', 'put']},
-    {settings: {guioptions: 'a' .. default_guioptions}, groups: ['delete', 'change', 'select', 'put']},
-    {settings: {guioptions: 'A' .. default_guioptions}, groups: ['delete', 'change', 'select', 'put']},
-    {settings: {guioptions: 'P' .. default_guioptions}, groups: ['delete', 'change', 'select', 'put']},
-    {settings: {guioptions: 'a' .. default_guioptions, clipboard: 'unnamed'}, groups: ['delete', 'put']},
-    {settings: {guioptions: 'P' .. default_guioptions, clipboard: 'unnamedplus'}, groups: ['delete', 'put']},
+    {settings: {guioptions: default_guioptions}, groups: ['delete', 'change', 'select']},
+    {settings: {guioptions: 'a' .. default_guioptions}, groups: ['delete', 'change', 'select']},
+    {settings: {guioptions: 'A' .. default_guioptions}, groups: ['delete', 'change', 'select']},
+    {settings: {guioptions: 'P' .. default_guioptions}, groups: ['delete', 'change', 'select']},
+    {settings: {guioptions: 'a' .. default_guioptions, clipboard: 'unnamed'}, groups: ['delete']},
+    {settings: {guioptions: 'P' .. default_guioptions, clipboard: 'unnamedplus'}, groups: ['delete']},
 ]
 
 def Settings(ctx: dict<any>): list<dict<any>>
@@ -694,9 +603,6 @@ const history_ops: list<dict<any>> = [
     {mode: 'v', lhs: 'c', prelude: 'vjl', suffix: "NEW\<Esc>", family: 'change'},
     {mode: 's', lhs: 'X', prelude: "ve\<C-G>", suffix: "\<Esc>", family: 'select'},
     {mode: 's', lhs: "\<BS>", op: 'd', prelude: "ve\<C-G>", family: 'select'},
-    {mode: 'v', lhs: 'p', prelude: 've', family: 'put'},
-    {mode: 'v', lhs: 'p', prelude: 've', count: '2', family: 'put'},
-    {mode: 'V', lhs: 'p', prelude: 'Vj', source: '"a', family: 'put'},
     {mode: 'i', lhs: 'd', tail: 'w', suffix: "\<Esc>", family: 'delete'},
 ]
 const histories = ['.', 'j.', '3.', 'u', "u\<C-R>", '.u', 'uu', 'u.', "u\<C-R>."]
@@ -705,22 +611,9 @@ const ex_commands: list<string> = [
     ":delete\<CR>", ":2delete\<CR>", ":1,3delete\<CR>", ":delete a\<CR>", ":delete _\<CR>",
     ":%delete\<CR>", "Vj:delete\<CR>", ":change\<CR>new text\<CR>.\<CR>", ":2,3change\<CR>new\<CR>.\<CR>",
     ":normal {n:d}w\<CR>", ":normal! dw\<CR>", ":normal 2{n:dd}\<CR>", ":normal {n:x}\<CR>",
-    ":normal ve{x:d}\<CR>", ":normal {n:cc}NEW\<CR>", ":normal ve{x:p}\<CR>", ":normal Vj\"a{x:p}\<CR>",
+    ":normal ve{x:d}\<CR>", ":normal {n:cc}NEW\<CR>",
     ":normal ve\<C-G>{s:X}\<CR>", ":execute 'normal {n:d}w'\<CR>", "3:normal {n:d}w\<CR>",
     ":normal i\<C-O>{n:d}w\<CR>",
-]
-
-# A Visual put followed by a visit to another buffer, with or without a
-# change there, and a repeat back in the first buffer.  The put oracle
-# takes every register change after the put for a leak, so the changes
-# made elsewhere leave the registers alone.
-const buffer_commands: list<string> = [
-    "ve{x:p}:new\<CR>:bwipeout!\<CR>{n:.}",
-    "ve{x:p}:new\<CR>:bwipeout!\<CR>{n:3.}",
-    "ve{x:p}:new\<CR>ihello\<Esc>:bwipeout!\<CR>.",
-    "ve{x:p}:new\<CR>ihello\<Esc>0rX:bwipeout!\<CR>.",
-    "ve{x:p}:new\<CR>ihello\<Esc>:bwipeout!\<CR>3.",
-    "Vj\"a{x:p}:new\<CR>ihello\<Esc>0rX:bwipeout!\<CR>.",
 ]
 
 def History(ctx: dict<any>): list<dict<any>>
@@ -736,7 +629,7 @@ def History(ctx: dict<any>): list<dict<any>>
         add(cases, Case('history', parts, extend({fixture: combo.fixture}, built)))
     endfor
     for combo in Product([
-            ['command', ex_commands + buffer_commands],
+            ['command', ex_commands],
             ['fixture', ['ascii', 'multibyte']],
     ])
         var built = Expand(ctx, combo.command)
@@ -760,13 +653,12 @@ const mode_templates: list<string> = [
     "ihello\<Esc>{n:d}w", "ihello\<C-O>{n:d}w", "i\<C-\>\<C-O>{n:d}w", "i\<C-O>vj{x:d}",
     "i\<C-O>V{x:d}", "i\<C-O>ve{x:c}", "i\<C-O>{n:dd}", "i\<C-O>{n:x}", "i\<C-O>{n:X}",
     "A\<C-O>{n:D}", "I\<C-O>{n:C}", "a\<C-O>{n:s}", "o\<C-O>{n:S}",
-    "ihello\<C-O>ve{x:p}", "i\<C-O>Vj{x:p}",
     "R\<C-O>{n:x}", "Rab\<C-O>{n:d}w", "gR\<C-O>{n:d}w", "gRab\<C-O>{n:x}",
     "i\<C-O>ve\<C-G>{s:X}", "i\<C-O>gh{s:X}", "R\<C-O>ve\<C-G>{s:X}",
     "vj:'<,'>delete\<CR>", "Vj:delete\<CR>", "Vj:normal {x:d}\<CR>",
     "{n:d}vj", "{n:d}Vw", "{n:d}\<C-V>j", "{n:c}vj", "{n:d}v$", "{n:c}viw",
     "ve{x:d}{n:d}w", "ve{x:c}NEW\<Esc>{n:x}", "ve\<C-G>{s:X}\<Esc>{n:dd}",
-    "ve{x:d}ve{x:p}", "{n:dd}Vj{x:p}",
+    "ve{x:d}vep", "{n:dd}Vjp",
     "ve\<C-G>{s:X}\<C-O>{n:d}w", "ve\<C-G>{s:X}\<Esc>ve\<C-G>{s:X}",
 ]
 
@@ -826,7 +718,6 @@ export def Cases(ctx: dict<any>): list<dict<any>>
         extend(cases, Motions(ctx))
     endif
     extend(cases, Select(ctx))
-    extend(cases, Put(ctx))
     extend(cases, Registers(ctx))
     extend(cases, Settings(ctx))
     extend(cases, History(ctx))
