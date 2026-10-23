@@ -19,7 +19,6 @@ g:vim9cutlass_registers = get(
         change: '_',
         delete: '_',
         select: '_',
-        put: '_',
     }
 )
 
