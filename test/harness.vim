@@ -132,7 +132,7 @@ def g:CutlassSnapshot()
 enddef
 
 # Runs one key sequence from the case's initial state and returns the state
-# right after the keys together with the state right before them.
+# right after the keys.
 def Execute(case: dict<any>, keys: string): dict<any>
     var fixture = fx.fixtures[case.fixture]
     NewBuffer(fixture, get(case, 'cursor', fixture.cursor))
@@ -140,7 +140,6 @@ def Execute(case: dict<any>, keys: string): dict<any>
     SeedRegisters(fx.seeds[get(case, 'seed', 'plain')])
     setreg('/', '')
     v:errmsg = ''
-    var before = Snapshot()
     snapshot = {}
     g:CutlassFeed(keys .. "\<F10>")
     var after = empty(snapshot) ? Snapshot() : snapshot
@@ -153,59 +152,7 @@ def Execute(case: dict<any>, keys: string): dict<any>
         tries += 1
     endwhile
     RestoreSettings()
-    return {before: before, after: after}
-enddef
-
-# Expected state after the plugin run: the vanilla run of the keys, with
-# the registers of the vanilla run that carries the register prefixes, or
-# for a put the registers from before it plus the replaced text in the
-# configured register when vanilla Vim stored any
-def Expected(case: dict<any>, vanilla: dict<any>, registers: dict<any>, base: dict<any>): dict<any>
-    var expected = deepcopy(vanilla.after)
-    if case.oracle == 'same'
-        expected.registers = deepcopy(registers.after.registers)
-    elseif case.oracle == 'put'
-        expected.registers = deepcopy(base)
-        var reg = case.register
-        var replaced = vanilla.after.registers['"']
-        # Vanilla Vim leaves the replaced text in the unnamed register; when
-        # that register did not change, as after a refused put or a put
-        # over an empty line, there is nothing to redirect
-        if reg != '_' && replaced != base['"']
-            var names = [reg]
-            # The unnamed register shows the contents of the register it
-            # points to, and without a reachable clipboard the clipboard
-            # registers show the unnamed register
-            if get(expected.registers['"'], 'points_to', '') == reg
-                add(names, '"')
-                if ctx.clipboard && !ctx.clipboard_working
-                    extend(names, ['*', '+'])
-                endif
-            endif
-            for name in names
-                expected.registers[name].regcontents = replaced.regcontents
-                expected.registers[name].regtype = replaced.regtype
-            endfor
-        endif
-        # Autoselect copies the selection to the star or plus register of a
-        # reachable clipboard when Visual mode ends, with or without the
-        # plugin, unless that register is the configured one and holds the
-        # replaced text.  The GUI takes the flags from 'guioptions' alone.
-        var settings = get(case, 'settings', {})
-        var autoselect = ctx.gui
-            ? get(settings, 'guioptions', '')
-            : get(settings, 'clipboard', '')->split(',')
-                ->map((_, flag) => get({autoselect: 'a', autoselectplus: 'P'}, flag, ''))->join('')
-        if ctx.clipboard_working && reg != '*' && autoselect =~# 'a'
-            expected.registers['*'] = deepcopy(vanilla.after.registers['*'])
-        endif
-        if ctx.clipboard_working && reg != '+' && autoselect =~# 'P'
-            expected.registers['+'] = deepcopy(vanilla.after.registers['+'])
-        endif
-    else
-        throw 'unknown oracle ' .. case.oracle
-    endif
-    return expected
+    return after
 enddef
 
 def Diff(expected: any, actual: any, path: string, out: list<string>)
@@ -316,7 +263,6 @@ def Main()
     endfor
     var vanilla: dict<any> = {}
     var registers: dict<any> = {}
-    var prefix: dict<any> = {}
     for case in cases
         if !empty(Unmet(case))
             continue
@@ -324,11 +270,6 @@ def Main()
         vanilla[case.id] = Execute(case, case.vanilla)
         registers[case.id] = case.vanilla_regs == case.vanilla
             ? vanilla[case.id] : Execute(case, case.vanilla_regs)
-        # Keys before a put change registers too, so the put oracle starts
-        # from their vanilla outcome rather than from the seeds
-        if !empty(get(case, 'vanilla_prefix', ''))
-            prefix[case.id] = Execute(case, case.vanilla_prefix)
-        endif
     endfor
     LoadPlugin()
     var results: list<dict<any>> = []
@@ -339,10 +280,11 @@ def Main()
             continue
         endif
         var plugin = Execute(case, case.keys)
-        var base = has_key(prefix, case.id) ? prefix[case.id].after.registers : plugin.before.registers
-        var expected = Expected(case, vanilla[case.id], registers[case.id], base)
+        # The vanilla run of the keys defines the expected state, with the
+        # registers of the vanilla run that carries the register prefixes
+        var expected = extend(copy(vanilla[case.id]), {registers: registers[case.id].registers})
         var diffs: list<string> = []
-        Diff(expected, plugin.after, '', diffs)
+        Diff(expected, plugin, '', diffs)
         var result = {
             id: case.id, matrix: case.matrix,
             status: empty(diffs) ? 'PASS' : 'FAIL',
@@ -350,7 +292,7 @@ def Main()
             keys: strtrans(case.keys), vanilla: strtrans(case.vanilla),
         }
         if !empty(diffs)
-            extend(result, {expected: expected, actual: plugin.after})
+            extend(result, {expected: expected, actual: plugin})
         endif
         add(results, result)
     endfor
