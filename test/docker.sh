@@ -5,7 +5,7 @@
 # Usage: test/docker.sh BASE_IMAGE
 #
 # Environment:
-#   DOCKER_NETWORK  network for the image build, default: bridge
+#   DOCKER_NETWORK  network for the image build, default: the builder's own
 #   RESULTS         directory for reports, default: test/results/<image>
 #   CASES, MATRICES, CONFIGS, DISPLAYS, VERBOSE, TIMEOUT  passed to run.sh
 
@@ -18,7 +18,8 @@ name=$(printf '%s' "$image" | tr -c 'a-zA-Z0-9_.\n-' '-')
 tag="vim9-cutlass-test:$name"
 results=${RESULTS:-$test_dir/results/$name}
 
-docker build --network "${DOCKER_NETWORK:-bridge}" --build-arg "BASE=$image" \
+# BuildKit knows no "bridge" network, so the builder picks one unless told
+docker build ${DOCKER_NETWORK:+--network "$DOCKER_NETWORK"} --build-arg "BASE=$image" \
     --tag "$tag" --file "$test_dir/Dockerfile" "$test_dir"
 
 mkdir -p "$results"
