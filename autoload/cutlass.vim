@@ -68,24 +68,16 @@ enddef
 def OverrideSelectMappings()
     var mode = 's'
 
-    var code = 33 # ASCII printable characters codes: 33-126
-    while code <= 126
-        var lhs = escape(nr2char(code), '|')
+    # ASCII printable characters codes: 33-126
+    for lhs in mapnew(range(33, 126), (_, code) => escape(nr2char(code), '|'))
         if CanMap(mode, lhs)
-            CreateMapping(mode, lhs, '<C-O>"' .. g:vim9cutlass_registers.select .. 'c' .. lhs)
-        endif
-        code += 1
-    endwhile
-
-    for lhs in ['<CR>', '<NL>', '<kEnter>', '<Space>']
-        if CanMap(mode, lhs)
-            CreateMapping(mode, lhs, '<C-O>"' .. g:vim9cutlass_registers.select .. 'c' .. lhs)
+            CreateMapping(mode, lhs, '<C-R>' .. g:vim9cutlass_registers.select .. lhs)
         endif
     endfor
 
-    for lhs in ['<BS>', '<Del>', '<kDel>', '<C-H>']
+    for lhs in ['<CR>', '<NL>', '<kEnter>', '<Space>', '<BS>', '<Del>', '<kDel>', '<C-H>']
         if CanMap(mode, lhs)
-            CreateMapping(mode, lhs, '<C-O>"' .. g:vim9cutlass_registers.select .. 'd')
+            CreateMapping(mode, lhs, '<C-R>' .. g:vim9cutlass_registers.select .. lhs)
         endif
     endfor
 enddef

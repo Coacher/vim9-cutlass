@@ -78,6 +78,11 @@ def Prefix(register: string): string
     return empty(register) ? '' : '"' .. register
 enddef
 
+# Typed text in Select mode takes its register from CTRL-R
+def SelectPrefix(register: string): string
+    return empty(register) ? '' : "\<C-R>" .. register
+enddef
+
 def Needs(case: dict<any>): list<string>
     var needs: list<string> = []
     if case.register =~ '[*+]'
@@ -268,16 +273,19 @@ const select_entries: list<dict<any>> = [
     {name: 'R<C-O>v<C-G>', prelude: "R\<C-O>ve\<C-G>"},
 ]
 
-# Typed keys: the plugin's change keys replace the selection and start
-# Insert mode, its delete keys only remove it, and a Tab is not a typed
-# key in Select mode at all.  CTRL-H keeps its modifier apart, as the GUI
-# and key protocol terminals deliver a keypress.
+# Typed keys: the ones the plugin maps, a Tab that is not a typed key in
+# Select mode at all, and characters outside printable ASCII, which the
+# plugin does not map, so that Vim's own replacement runs.  CTRL-H keeps
+# its modifier apart, as the GUI and key protocol terminals deliver a
+# keypress.
 const select_keys: list<dict<any>> = [
-    {key: 'X', op: 'c'}, {key: 'a', op: 'c'}, {key: 'd', op: 'c'}, {key: '1', op: 'c'},
-    {key: '|', op: 'c'}, {key: '"', op: 'c'}, {key: '\', op: 'c'}, {key: '<', op: 'c'},
-    {key: ' ', op: 'c'}, {key: "\<CR>", op: 'c'}, {key: "\<NL>", op: 'c'}, {key: "\<kEnter>", op: 'c'},
-    {key: "\<BS>", op: 'd'}, {key: "\<Del>", op: 'd'}, {key: "\<kDel>", op: 'd'}, {key: "\<*C-H>", op: 'd'},
-    {key: "\<Tab>", redirected: false}, {key: 'ю', op: 'c'}, {key: '日', op: 'c'},
+    {key: 'X'}, {key: 'a'}, {key: 'd'}, {key: '1'},
+    {key: '|'}, {key: '"'}, {key: '\'}, {key: '<'},
+    {key: ' '}, {key: "\<CR>"}, {key: "\<NL>"}, {key: "\<kEnter>"},
+    {key: "\<BS>"}, {key: "\<Del>"}, {key: "\<kDel>"}, {key: "\<*C-H>"},
+    {key: "\<Tab>", redirected: false},
+    {key: 'ю'},
+    {key: '日'},
 ]
 
 def Select(ctx: dict<any>): list<dict<any>>
@@ -291,16 +299,13 @@ def Select(ctx: dict<any>): list<dict<any>>
         var register = get(combo.key, 'redirected', true)
             ? Register(ctx, 's', keytrans(combo.key.key), 'select') : ''
         var prelude = combo.entry.prelude
-        # A key the plugin leaves alone keeps the vanilla outcome
-        var redirect = empty(register) ? combo.key.key
-            : "\<C-O>" .. Prefix(register) .. combo.key.op .. (combo.key.op == 'c' ? combo.key.key : '')
         var parts = [combo.entry.name, combo.key.key, combo.selection, combo.fixture]
         add(cases, Case('select', parts, {
             fixture: combo.fixture,
             settings: extend({selection: combo.selection}, get(combo.entry, 'settings', {})),
             keys: prelude .. combo.key.key,
             vanilla: prelude .. combo.key.key,
-            vanilla_regs: prelude .. redirect,
+            vanilla_regs: prelude .. SelectPrefix(register) .. combo.key.key,
             register: register,
         }))
     endfor
@@ -320,7 +325,6 @@ enddef
 #   prelude     keys fed first, such as a selection or a cursor move
 #   suffix      keys fed after the operation
 #   family      plugin register family
-#   op          'c' or 'd', the change or delete a Select key stands for
 #   vanilla     key the plugin maps lhs to when it differs from lhs
 export def Build(ctx: dict<any>, spec: dict<any>): dict<any>
     var mode = spec.mode
@@ -335,10 +339,9 @@ export def Build(ctx: dict<any>, spec: dict<any>): dict<any>
     var vlhs = get(spec, 'vanilla', lhs)
     var result: dict<any> = {register: register}
     if mode == 's'
-        var op = get(spec, 'op', 'c')
         result.keys = prelude .. lhs .. suffix
         result.vanilla = result.keys
-        result.vanilla_regs = prelude .. "\<C-O>" .. prefix .. op .. (op == 'c' ? lhs : '') .. suffix
+        result.vanilla_regs = prelude .. SelectPrefix(register) .. lhs .. suffix
     elseif mode == 'i' || mode == 'R'
         result.keys = prelude .. mode .. "\<C-O>" .. count .. lhs .. tail .. suffix
         result.vanilla = prelude .. mode .. "\<C-O>" .. count .. prefix .. vlhs .. tail .. suffix
@@ -375,7 +378,7 @@ export def Expand(ctx: dict<any>, template: string): dict<any>
         result.keys ..= before .. key
         if mode == 's'
             result.vanilla ..= before .. key
-            result.vanilla_regs ..= before .. "\<C-O>" .. Prefix(register) .. 'c' .. key
+            result.vanilla_regs ..= before .. SelectPrefix(register) .. key
         else
             result.vanilla ..= before .. Prefix(register) .. key
             result.vanilla_regs ..= before .. Prefix(register) .. key
@@ -414,7 +417,7 @@ const register_ops: list<dict<any>> = [
     {mode: "\<C-V>", lhs: 'd', prelude: "\<C-V>jl", family: 'delete'},
     {mode: 'v', lhs: 'c', prelude: 'vjl', family: 'change'},
     {mode: 's', lhs: 'X', prelude: "ve\<C-G>", family: 'select'},
-    {mode: 's', lhs: "\<BS>", op: 'd', prelude: "Vj\<C-G>", family: 'select'},
+    {mode: 's', lhs: "\<BS>", prelude: "Vj\<C-G>", family: 'select'},
 ]
 
 def Registers(ctx: dict<any>): list<dict<any>>
@@ -454,7 +457,7 @@ const setting_ops: dict<list<dict<any>>> = {
     ],
     select: [
         {mode: 's', lhs: 'X', prelude: "ve\<C-G>", family: 'select'},
-        {mode: 's', lhs: "\<BS>", op: 'd', prelude: "ve\<C-G>", family: 'select'},
+        {mode: 's', lhs: "\<BS>", prelude: "ve\<C-G>", family: 'select'},
         {mode: 's', lhs: "\<CR>", prelude: "Vj\<C-G>", family: 'select'},
     ],
     insert: [
@@ -484,12 +487,12 @@ const setting_ops: dict<list<dict<any>>> = {
     cmdselect: [
         {mode: 's', lhs: 'X', prelude: "v\<S-Right>", family: 'select'},
         {mode: 's', lhs: 'X', prelude: 'V', family: 'select'},
-        {mode: 's', lhs: "\<BS>", op: 'd', prelude: "\<C-V>\<S-Right>", family: 'select'},
+        {mode: 's', lhs: "\<BS>", prelude: "\<C-V>\<S-Right>", family: 'select'},
         {mode: 's', lhs: "\<CR>", prelude: "v\<S-Down>", family: 'select'},
     ],
     keyselect: [
         {mode: 's', lhs: 'X', prelude: "\<S-Right>\<S-Right>", family: 'select'},
-        {mode: 's', lhs: "\<BS>", op: 'd', prelude: "\<S-Down>", family: 'select'},
+        {mode: 's', lhs: "\<BS>", prelude: "\<S-Down>", family: 'select'},
         {mode: 's', lhs: 'X', prelude: "\<S-End>", family: 'select'},
         {mode: 's', lhs: "\<CR>", prelude: "\<S-Right>", family: 'select'},
     ],
@@ -602,7 +605,7 @@ const history_ops: list<dict<any>> = [
     {mode: "\<C-V>", lhs: 'd', prelude: "\<C-V>jl", family: 'delete'},
     {mode: 'v', lhs: 'c', prelude: 'vjl', suffix: "NEW\<Esc>", family: 'change'},
     {mode: 's', lhs: 'X', prelude: "ve\<C-G>", suffix: "\<Esc>", family: 'select'},
-    {mode: 's', lhs: "\<BS>", op: 'd', prelude: "ve\<C-G>", family: 'select'},
+    {mode: 's', lhs: "\<BS>", prelude: "ve\<C-G>", family: 'select'},
     {mode: 'i', lhs: 'd', tail: 'w', suffix: "\<Esc>", family: 'delete'},
 ]
 const histories = ['.', 'j.', '3.', 'u', "u\<C-R>", '.u', 'uu', 'u.', "u\<C-R>."]
