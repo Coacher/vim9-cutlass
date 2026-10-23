@@ -280,14 +280,15 @@ const select_entries: list<dict<any>> = [
 # plugin does not map, so that Vim's own replacement runs.  CTRL-H keeps
 # its modifier apart, as the GUI and key protocol terminals deliver a
 # keypress.
+const multibyte_select_known = 'multibyte Select typing is not redirected'
 const select_keys: list<dict<any>> = [
     {key: 'X'}, {key: 'a'}, {key: 'd'}, {key: '1'},
     {key: '|'}, {key: '"'}, {key: '\'}, {key: '<'},
     {key: ' '}, {key: "\<CR>"}, {key: "\<NL>"}, {key: "\<kEnter>"},
     {key: "\<BS>"}, {key: "\<Del>"}, {key: "\<kDel>"}, {key: "\<*C-H>"},
     {key: "\<Tab>", redirected: false},
-    {key: 'ю'},
-    {key: '日'},
+    {key: 'ю', known: multibyte_select_known},
+    {key: '日', known: multibyte_select_known},
 ]
 
 def Select(ctx: dict<any>): list<dict<any>>
