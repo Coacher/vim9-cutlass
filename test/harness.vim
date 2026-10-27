@@ -194,10 +194,8 @@ def LoadPlugin()
     g:vim9cutlass_registers = deepcopy(config.registers)
     g:vim9cutlass_exclude = deepcopy(get(config, 'exclude', []))
     g:vim9cutlass_cut = get(config, 'cut', v:null)
-    for [mode, maps] in items(get(config, 'usermaps', {}))
-        for [lhs, rhs] in items(maps)
-            execute(mode .. 'noremap ' .. lhs .. ' ' .. rhs)
-        endfor
+    for map in get(config, 'usermaps', [])
+        execute(map.mode .. 'noremap ' .. map.lhs .. ' ' .. map.rhs)
     endfor
     execute('source ' .. fnameescape(repo_dir .. '/plugin/cutlass.vim'))
     if !exists('g:vim9cutlass_loaded')

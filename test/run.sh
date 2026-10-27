@@ -20,7 +20,7 @@ results=${RESULTS:-$test_dir/results}
 vim_bins=${VIM_BIN-vim}
 gvim_bins=${GVIM_BIN-gvim}
 displays=${DISPLAYS:-none x11 wayland xwayland}
-configs=${CONFIGS:-black named distinct plus star exclude usermap cut}
+configs=${CONFIGS:-black named distinct plus star exclude usermap cut cutx}
 timeout_seconds=${TIMEOUT:-900}
 verbose=${VERBOSE:-0}
 

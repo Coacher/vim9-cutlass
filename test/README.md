@@ -46,7 +46,8 @@ Matrices
 case by case: a new motion, setting or fixture becomes a new axis value.
 
 * `operators`: every change and delete key in Normal, Visual, Insert CTRL-O
-  and Replace CTRL-O modes, with counts before the operator and the motion.
+  and Replace CTRL-O modes, with counts before the operator and the motion,
+  and between the two keys of a doubled operator.
 * `motions`: every motion and text object as the target of `c` and `d`,
   from every cursor position of every fixture.
 * `select`: typing over a Select mode selection entered through every
@@ -54,7 +55,9 @@ case by case: a new motion, setting or fixture becomes a new axis value.
   Replace edit, with the keys the plugin maps and the ones it leaves to
   Vim.
 * `registers`: representative operations of every family against every
-  register seed, run under every plugin configuration.
+  register seed, run under every plugin configuration, including a
+  register the user names before the key, with `"` or in Select mode
+  with CTRL-R.
 * `settings`: each option that influences the operations, crossed with
   the operation groups it can affect.
 * `history`: operations followed by repeat, undo and redo, including a
@@ -66,9 +69,15 @@ case by case: a new motion, setting or fixture becomes a new axis value.
 
 Plugin configurations live in the same file: the black hole default, named
 registers, distinct registers per family, the clipboard registers, an
-exclude list, pre-existing user mappings and a cut key. The register
-oracle follows the configuration, so an excluded key is expected to behave
-like vanilla Vim and a user mapping is expected to win.
+exclude list, pre-existing user mappings and a cut key. The user mappings
+come in every form Vim offers: for one mode, for Visual and Select
+together or for every mode, redirecting to a register, running another
+command or doing nothing. One configuration makes a key the plugin
+redirects the cut key. The register oracle follows the configuration, so
+an excluded key is expected to behave like vanilla Vim, a user mapping is
+expected to win, with its right-hand side standing in for the key in the
+vanilla sequence, and a cut mapping is expected to replace the
+redirection of its key.
 
 Fixtures and register seeds live in `fixtures.vim`. Every register holds
 a distinct value before a case runs, so any unexpected write shows up in
