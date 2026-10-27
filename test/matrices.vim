@@ -366,8 +366,10 @@ def FamilyOf(lhs: string): string
 enddef
 
 # Expands a key template whose {mode:key} tokens stand for keys the plugin
-# maps, giving the typed keys and the vanilla keys with register prefixes
-export def Expand(ctx: dict<any>, template: string): dict<any>
+# maps, giving the typed keys and the vanilla keys with register prefixes.
+# On a command line the CTRL-R of a Select mode prefix is typed literally,
+# as the command line would otherwise read it as a register insertion.
+export def Expand(ctx: dict<any>, template: string, cmdline = false): dict<any>
     var result: dict<any> = {keys: '', vanilla: '', vanilla_regs: '', register: ''}
     var rest = template
     while true
@@ -382,7 +384,7 @@ export def Expand(ctx: dict<any>, template: string): dict<any>
         result.keys ..= before .. key
         if mode == 's'
             result.vanilla ..= before .. key
-            result.vanilla_regs ..= before .. SelectPrefix(register) .. key
+            result.vanilla_regs ..= before .. (cmdline ? "\<C-V>" : '') .. SelectPrefix(register) .. key
         else
             result.vanilla ..= before .. Prefix(register) .. key
             result.vanilla_regs ..= before .. Prefix(register) .. key
@@ -639,7 +641,7 @@ def History(ctx: dict<any>): list<dict<any>>
             ['command', ex_commands],
             ['fixture', ['ascii', 'multibyte']],
     ])
-        var built = Expand(ctx, combo.command)
+        var built = Expand(ctx, combo.command, true)
         var parts = [strtrans(built.keys), combo.fixture]
         add(cases, Case('history', parts, extend({fixture: combo.fixture}, built)))
     endfor

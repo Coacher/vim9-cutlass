@@ -69,6 +69,9 @@ def NewBuffer(fixture: dict<any>, cursor: list<number>)
     setlocal undolevels=-1
     setline(1, fixture.lines)
     setlocal undolevels<
+    # The register a Select mode CTRL-R picked outlives its Select session;
+    # only a command that returns to Select mode resets it
+    g:CutlassFeed("gh\<C-O>0\<Esc>")
     for [name, pos] in items(fixture.marks)
         setpos("'" .. name, [0, pos[0], pos[1], 0])
     endfor
