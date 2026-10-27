@@ -813,6 +813,24 @@ def Cut(ctx: dict<any>): list<dict<any>>
 enddef
 
 
+# Keeps the first of the cases whose runs are the same: the products of
+# the matrices meet where an axis value of one is the default of another
+def Unique(cases: list<dict<any>>): list<dict<any>>
+    var seen: dict<bool> = {}
+    var unique: list<dict<any>> = []
+    for case in cases
+        var run = json_encode([
+            case.fixture, get(case, 'cursor', fx.fixtures[case.fixture].cursor), case.seed,
+            items(case.settings)->sort(), case.keys, case.vanilla, case.vanilla_regs,
+        ])
+        if !has_key(seen, run)
+            seen[run] = true
+            add(unique, case)
+        endif
+    endfor
+    return unique
+enddef
+
 export def Cases(ctx: dict<any>): list<dict<any>>
     var cases: list<dict<any>> = []
     extend(cases, Operators(ctx))
@@ -825,5 +843,5 @@ export def Cases(ctx: dict<any>): list<dict<any>>
     extend(cases, History(ctx))
     extend(cases, Modes(ctx))
     extend(cases, Cut(ctx))
-    return cases
+    return Unique(cases)
 enddef

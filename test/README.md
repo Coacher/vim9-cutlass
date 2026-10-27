@@ -44,6 +44,8 @@ Matrices
 
 `matrices.vim` generates the cases as products of axes. Nothing is listed
 case by case: a new motion, setting or fixture becomes a new axis value.
+Where the products of two matrices meet, such as an operation of the
+registers matrix under the default seed, the case is generated once.
 
 * `operators`: every change and delete key in Normal, Visual, Insert CTRL-O
   and Replace CTRL-O modes, with counts before the operator and the motion,
