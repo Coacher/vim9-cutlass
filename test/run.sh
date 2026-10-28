@@ -101,6 +101,17 @@ annotate() {
     done
 }
 
+# Counts a test process that left no usable report as one failed case
+broken_run() {
+    local run=$1 reason=$2 log_file=$3
+    log "FAIL $run: $reason, see $log_file"
+    if [ -n "${GITHUB_ACTIONS:-}" ]; then
+        printf '::error title=%s::%s\n' "$run" "$reason"
+    fi
+    total_fail=$((total_fail + 1))
+    failed_runs+=("$run")
+}
+
 run_process() {
     local bin=$1 kind=$2 display=$3 config=$4
     local name
@@ -120,12 +131,18 @@ run_process() {
         timeout -s KILL "$timeout_seconds" "$bin" "${args[@]}" </dev/null >"$run_dir/vim.log" 2>&1
     local status=$?
     if [ ! -f "$run_dir/report.txt" ]; then
-        log "FAIL $display/$config/$name-$kind: no report, exit status $status, see $run_dir/vim.log"
-        if [ -n "${GITHUB_ACTIONS:-}" ]; then
-            printf '::error title=%s::no report, exit status %s\n' "$display/$config/$name-$kind" "$status"
-        fi
-        total_fail=$((total_fail + 1))
-        failed_runs+=("$display/$config/$name-$kind")
+        broken_run "$display/$config/$name-$kind" "no report, exit status $status" "$run_dir/vim.log"
+        return
+    fi
+    local summary
+    summary=$(grep '^SUMMARY' "$run_dir/report.txt")
+    # The harness replaces the report with its error; a write that failed
+    # leaves a report without counts
+    if [ -z "$summary" ]; then
+        local reason
+        reason=$(grep '^HARNESS ERROR' "$run_dir/report.txt")
+        broken_run "$display/$config/$name-$kind" \
+            "${reason:-no summary in the report, exit status $status}" "$run_dir/report.txt"
         return
     fi
     if [ "$verbose" = 1 ]; then
@@ -136,8 +153,6 @@ run_process() {
     if [ -n "${GITHUB_ACTIONS:-}" ]; then
         annotate "$run_dir/report.txt" "$display/$config/$name-$kind"
     fi
-    local summary
-    summary=$(grep '^SUMMARY' "$run_dir/report.txt")
     local pass fail skip known
     pass=$(printf '%s' "$summary" | sed -n 's/.*: \([0-9]*\) passed.*/\1/p')
     fail=$(printf '%s' "$summary" | sed -n 's/.* \([0-9]*\) failed.*/\1/p')
@@ -147,7 +162,7 @@ run_process() {
     total_fail=$((total_fail + ${fail:-0}))
     total_skip=$((total_skip + ${skip:-0}))
     total_known=$((total_known + ${known:-0}))
-    if [ "${fail:-0}" -gt 0 ] || [ -z "$summary" ]; then
+    if [ "${fail:-0}" -gt 0 ]; then
         failed_runs+=("$display/$config/$name-$kind")
     fi
 }
