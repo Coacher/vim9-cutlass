@@ -165,12 +165,16 @@ enddef
 
 def Needs(case: dict<any>): list<string>
     var needs: list<string> = []
+    var settings = get(case, 'settings', {})
+    # The autoselect flags of 'guioptions' copy the Visual area to a
+    # clipboard register as the 'clipboard' option does
     if case.register =~ '[*+]'
         add(needs, 'clipboard_working')
-    elseif has_key(get(case, 'settings', {}), 'clipboard') || case.keys =~ "[\"\<C-R>][*+]"
+    elseif has_key(settings, 'clipboard') || get(settings, 'guioptions', '') =~# '[aAP]'
+            || case.keys =~ "[\"\<C-R>][*+]"
         add(needs, 'clipboard')
     endif
-    if has_key(get(case, 'settings', {}), 'guioptions')
+    if has_key(settings, 'guioptions')
         add(needs, 'gui_running')
     endif
     return needs

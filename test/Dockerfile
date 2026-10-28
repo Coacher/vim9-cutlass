@@ -1,6 +1,6 @@
-# Test image for one distribution: every packaged Vim variant, the display
-# servers the suite starts and nothing from the repository, which is
-# mounted at run time.
+# Test image for one distribution: every packaged Vim variant that differs
+# in the features the suite sees, the display servers the suite starts and
+# nothing from the repository, which is mounted at run time.
 ARG BASE=debian:stable
 FROM $BASE
 
@@ -8,9 +8,9 @@ RUN set -eu; \
     if command -v apt-get >/dev/null; then \
         apt-get update; \
         DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            vim-tiny vim vim-nox vim-gtk3 xvfb sway xwayland fonts-dejavu-core; \
+            vim-tiny vim vim-gtk3 xvfb sway xwayland fonts-dejavu-core; \
         rm -rf /var/lib/apt/lists/*; \
-        printf 'VIM_BIN="vim.tiny vim.basic vim.nox vim.gtk3"\nGVIM_BIN="vim.gtk3"\n' >/etc/cutlass-test.env; \
+        printf 'VIM_BIN="vim.tiny vim.basic vim.gtk3"\nGVIM_BIN="vim.gtk3"\n' >/etc/cutlass-test.env; \
     elif command -v dnf >/dev/null; then \
         dnf -y install vim-minimal vim-enhanced vim-X11 \
             xorg-x11-server-Xvfb sway xorg-x11-server-Xwayland dejavu-sans-mono-fonts; \
