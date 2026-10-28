@@ -23,6 +23,10 @@ displays=${DISPLAYS:-none x11 wayland xwayland}
 configs=${CONFIGS:-black named distinct plus star exclude usermap cut cutx}
 timeout_seconds=${TIMEOUT:-900}
 verbose=${VERBOSE:-0}
+# Builds that never reach a display server run on one variant: none when
+# selected, otherwise the first variant that starts
+headless_display=
+case " $displays " in *" none "*) headless_display=none ;; esac
 
 # shellcheck source=display.sh
 . "$test_dir/display.sh"
@@ -36,6 +40,8 @@ total_pass=0
 total_fail=0
 total_skip=0
 total_known=0
+# The display server where a build and kind ran every case
+declare -A full_servers
 failed_runs=()
 skipped_runs=()
 
@@ -54,14 +60,21 @@ base_env=(
     "NO_AT_BRIDGE=1"
 )
 
-# The GUI flavour only shows in the "version with GTK3 GUI." line
-has_gui() {
-    "$1" --version 2>/dev/null | grep -q 'version with [^ ]* GUI\.'
-}
-
-has_vim9script() {
-    env -i "${base_env[@]}" "$1" -v -u NONE -i NONE -N --not-a-term -es \
-        -c 'if has("vim9script") | qall! | endif' -c 'cquit!' </dev/null >/dev/null 2>&1
+# Caches the feature probe per binary, as every display variant asks for it
+declare -A features
+has_feature() {
+    local key="$1 $2"
+    if [ -z "${features[$key]:-}" ]; then
+        # The subshell keeps bash from reporting a probe the timeout killed
+        if (timeout -s KILL "$timeout_seconds" env -i "${base_env[@]}" \
+            "$1" -v -u NONE -i NONE -N --not-a-term -es \
+            -c "if has('$2') | qall! | endif" -c 'cquit!' </dev/null; exit $?) >/dev/null 2>&1; then
+            features[$key]=1
+        else
+            features[$key]=0
+        fi
+    fi
+    [ "${features[$key]}" = 1 ]
 }
 
 # A gVim that cannot use the display falls back to terminal mode, and one
@@ -74,6 +87,16 @@ gui_starts() {
         -c 'if has("gui_running") | qall! | endif' -c 'cquit!' </dev/null; exit $?) >/dev/null 2>&1
 }
 
+# Terminal Vim draws its screen into the log, mostly as escape sequences
+# around every fed key.  Only the text is kept, a cursor jump as a space;
+# the log is filtered after Vim exits, as Vim behaves differently when its
+# output goes to a pipe.
+screen_text() {
+    LC_ALL=C sed -i 's#\x1b\[[0-9]*C# #g; s#\x1b\[[0-?]*[ -/]*[@-~]##g;
+        s#\x1b[]P][^\x07\x1b]*\(\x07\|\x1b\\\)##g; s#\x1b[ -/]*.##g; s#[\x01-\x08\x0b-\x1f\x7f]##g;
+        /^[[:space:]]*$/d' "$1"
+}
+
 # Builds without Vim9 script must reject the plugin without side effects
 degraded_check() {
     local bin=$1 run_dir=$2 out
@@ -83,6 +106,7 @@ degraded_check() {
         </dev/null 2>&1)
     local status=$?
     printf '%s\n' "$out" >"$run_dir/vim.log"
+    screen_text "$run_dir/vim.log"
     if [ $status -eq 0 ] && [ "$(printf '%s' "$out" | grep -c 'No mapping found')" -eq 2 ]; then
         log "SUMMARY $(basename "$bin") degraded: 1 passed, 0 failed, 0 skipped (no vim9script)"
         total_pass=$((total_pass + 1))
@@ -113,7 +137,7 @@ broken_run() {
 }
 
 run_process() {
-    local bin=$1 kind=$2 display=$3 config=$4
+    local bin=$1 kind=$2 display=$3 config=$4 scope=$5
     local name
     name=$(basename "$bin")
     local run_dir="$results/$display/$config/$name-$kind"
@@ -127,9 +151,12 @@ run_process() {
     fi
     env -i "${base_env[@]}" "${display_env[@]}" \
         "CUTLASS_CONFIG=$config" "CUTLASS_DISPLAY=$display" "CUTLASS_RESULTS=$run_dir" \
-        "CUTLASS_CASES=${CASES:-}" "CUTLASS_MATRICES=${MATRICES:-}" \
+        "CUTLASS_CASES=${CASES:-}" "CUTLASS_MATRICES=${MATRICES:-}" "CUTLASS_SCOPE=$scope" \
         timeout -s KILL "$timeout_seconds" "$bin" "${args[@]}" </dev/null >"$run_dir/vim.log" 2>&1
     local status=$?
+    if [ "$kind" = term ]; then
+        screen_text "$run_dir/vim.log"
+    fi
     if [ ! -f "$run_dir/report.txt" ]; then
         broken_run "$display/$config/$name-$kind" "no report, exit status $status" "$run_dir/vim.log"
         return
@@ -174,12 +201,12 @@ run_binary() {
         skipped_runs+=("$bin: not found")
         return
     fi
-    if [ "$kind" = gui ] && ! has_gui "$bin"; then
+    if [ "$kind" = gui ] && ! has_feature "$bin" gui; then
         log "SKIP $bin: no GUI support"
         skipped_runs+=("$bin: no GUI")
         return
     fi
-    if ! has_vim9script "$bin"; then
+    if ! has_feature "$bin" vim9script; then
         if [ "$display" = none ]; then
             local run_dir="$results/$display/degraded/$(basename "$bin")-$kind"
             mkdir -p "$run_dir"
@@ -187,13 +214,31 @@ run_binary() {
         fi
         return
     fi
+    # Without the clipboard feature Vim never reaches a display server, so
+    # every other display variant would repeat the run
+    if [ "$display" != "$headless_display" ] && ! has_feature "$bin" clipboard; then
+        log "SKIP $bin: no clipboard, runs on display $headless_display only"
+        skipped_runs+=("$bin: no clipboard on $display")
+        return
+    fi
     if [ "$kind" = gui ] && ! gui_starts "$bin"; then
         log "SKIP $bin: GUI cannot run on display $display"
         skipped_runs+=("$bin: no GUI on $display")
         return
     fi
+    # Only the clipboard cases reach a different state under another
+    # display server, so a build runs every case on none and on the first
+    # server it reaches, and the clipboard cases on the other servers
+    local scope=all
+    if [ "$display" != none ]; then
+        if [ -n "${full_servers[$bin $kind]:-}" ]; then
+            scope=clipboard
+        else
+            full_servers[$bin $kind]=$display
+        fi
+    fi
     for config in $configs; do
-        run_process "$bin" "$kind" "$display" "$config"
+        run_process "$bin" "$kind" "$display" "$config" "$scope"
     done
 }
 
@@ -203,6 +248,9 @@ for display in $displays; do
         log "SKIP display $display: $skip_reason"
         skipped_runs+=("display $display: $skip_reason")
         continue
+    fi
+    if [ -z "$headless_display" ]; then
+        headless_display=$display
     fi
     for bin in $vim_bins; do
         run_binary "$bin" term "$display"

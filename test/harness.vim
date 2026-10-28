@@ -9,6 +9,8 @@ vim9script
 #   CUTLASS_RESULTS   directory that receives the report files
 #   CUTLASS_CASES     optional pattern that selects case ids
 #   CUTLASS_MATRICES  optional pattern that selects matrix names
+#   CUTLASS_SCOPE     clipboard selects the cases that need the clipboard,
+#                     anything else every case
 
 import './fixtures.vim' as fx
 import './matrices.vim' as mx
@@ -52,6 +54,11 @@ def Baseline()
     if has('gui_running')
         set guioptions-=a
         set guioptions-=A
+    else
+        # Terminal Vim switches bracketed paste and modifyOtherKeys around
+        # every fed key sequence, megabytes of codes in the log; the keys
+        # come from feedkeys() and never pass the terminal
+        set t_BE= t_BD= t_TI= t_TE=
     endif
     # The snapshot key records the state at the end of the fed keys from
     # inside the mode the keys left Vim in; pending operators are cancelled
@@ -188,6 +195,7 @@ enddef
 def Selected(case: dict<any>): bool
     return (empty($CUTLASS_MATRICES) || case.matrix =~ $CUTLASS_MATRICES)
         && (empty($CUTLASS_CASES) || case.id =~ $CUTLASS_CASES)
+        && ($CUTLASS_SCOPE != 'clipboard' || indexof(case.needs, (_, need) => need =~ '^clipboard') >= 0)
 enddef
 
 def LoadPlugin()
@@ -251,16 +259,18 @@ def WriteReports(results: list<dict<any>>, run: string)
     for [reason, count] in items(knowns)
         add(report, printf('KNOWN %d cases: %s', count, reason))
     endfor
-    add(report, printf('SUMMARY %s: %d passed, %d failed, %d skipped, %d known, clipboard %s',
+    add(report, printf('SUMMARY %s: %d passed, %d failed, %d skipped, %d known, clipboard %s%s',
         run, counts.PASS, counts.FAIL, counts.SKIP, counts.KNOWN,
-        ctx.clipboard_working ? 'working' : (ctx.clipboard ? 'present' : 'absent')))
+        ctx.clipboard_working ? 'working' : (ctx.clipboard ? 'present' : 'absent'),
+        $CUTLASS_SCOPE == 'clipboard' ? ', clipboard cases only' : ''))
     add(xml, printf('<testsuite name="%s" tests="%d" failures="%d" skipped="%d">',
         XmlEscape(run), len(results), counts.FAIL, counts.SKIP + counts.KNOWN))
     extend(xml, cases)
     add(xml, '</testsuite>')
     writefile(report, results_dir .. '/report.txt')
     writefile(xml, results_dir .. '/junit.xml')
-    writefile(mapnew(results, (_, r) => json_encode(r)), results_dir .. '/results.jsonl')
+    writefile(results->copy()->filter((_, r) => r.status != 'PASS')->map((_, r) => json_encode(r)),
+        results_dir .. '/results.jsonl')
 enddef
 
 def Main()
@@ -274,15 +284,20 @@ def Main()
         endif
         ids[case.id] = true
     endfor
-    var vanilla: dict<any> = {}
-    var registers: dict<any> = {}
+    # The expected states wait for the plugin phase in their string form,
+    # which takes a fraction of the memory of their dictionaries
+    var expected_states: dict<string> = {}
     for case in cases
         if !empty(Unmet(case))
             continue
         endif
-        vanilla[case.id] = Execute(case, case.vanilla)
-        registers[case.id] = case.vanilla_regs == case.vanilla
-            ? vanilla[case.id] : Execute(case, case.vanilla_regs)
+        # The vanilla run of the keys defines the expected state, with the
+        # registers of the vanilla run that carries the register prefixes
+        var expected = Execute(case, case.vanilla)
+        if case.vanilla_regs != case.vanilla
+            expected.registers = Execute(case, case.vanilla_regs).registers
+        endif
+        expected_states[case.id] = string(expected)
     endfor
     LoadPlugin()
     var results: list<dict<any>> = []
@@ -293,11 +308,14 @@ def Main()
             continue
         endif
         var plugin = Execute(case, case.keys)
-        # The vanilla run of the keys defines the expected state, with the
-        # registers of the vanilla run that carries the register prefixes
-        var expected = extend(copy(vanilla[case.id]), {registers: registers[case.id].registers})
         var diffs: list<string> = []
-        Diff(expected, plugin, '', diffs)
+        var expected: dict<any> = {}
+        # Equal string forms mean equal states; the expected state is only
+        # rebuilt for the recursive walk that describes a difference
+        if string(plugin) != expected_states[case.id]
+            expected = eval(expected_states[case.id])
+            Diff(expected, plugin, '', diffs)
+        endif
         var status = empty(diffs) ? 'PASS' : 'FAIL'
         if !empty(case.known)
             # A marked case has to keep failing, or its mark is stale
@@ -313,7 +331,9 @@ def Main()
             known: case.known,
             keys: strtrans(case.keys), vanilla: strtrans(case.vanilla),
         }
-        if !empty(diffs)
+        # A known case only needs its differences, and a stale known mark
+        # leaves no difference to show
+        if status == 'FAIL' && !empty(expected)
             extend(result, {expected: expected, actual: plugin})
         endif
         add(results, result)

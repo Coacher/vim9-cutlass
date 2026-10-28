@@ -105,10 +105,20 @@ skipped with the binary named, and so is a gVim that cannot run on
 a display: a GTK build without the Wayland backend cannot open the
 `wayland` display, and the `xwayland` variant covers it under a Wayland
 compositor instead. Clipboard cases are skipped on builds without the
-clipboard feature. Each run records whether the clipboard was reachable:
-a Vim built with the Wayland feature reaches the clipboard under `wayland`,
-while a build without it sees the clipboard registers without reaching
-a clipboard, and the suite covers that state as such.
+clipboard feature, and such builds run on one variant only, as they never
+reach a display server and every other variant would repeat that run: on
+`none` when it is selected, otherwise on the first selected variant that
+starts, and the other variants report them as skipped. A build that reaches
+display servers runs every case on the first server it reaches, and
+terminal Vim also on `none`, but only the clipboard cases on the other
+servers: the other cases never touch a clipboard and reach the same state
+under every server. The clipboard cases use a clipboard register or set the
+`clipboard` option or a `guioptions` flag that copies the Visual area to
+a clipboard register, and the summary of a run limited to them says so.
+Each run records whether the clipboard was reachable: a Vim built with the
+Wayland feature reaches the clipboard under `wayland`, while a build
+without it sees the clipboard registers without reaching a clipboard, and
+the suite covers that state as such.
 
 Running locally
 ---------------
@@ -136,21 +146,24 @@ For example, a local GTK 2 build is covered with
 configuration with `MATRICES='^select$' CONFIGS=named test/run.sh`.
 
 Each run writes `report.txt`, `junit.xml` and `results.jsonl` under the
-results directory. The JSON lines of failing cases carry the full expected
-and actual state.
+results directory. `results.jsonl` lists the cases that failed, were
+skipped or are known failures; JUnit alone lists the passing ones. The JSON
+lines of failing cases carry the full expected and actual state.
 
 Distribution coverage
 ---------------------
 
     test/docker.sh debian:stable
 
-builds `Dockerfile` on the given base image with every packaged Vim variant
-and the display servers, then runs `run.sh` inside with no network as the
-calling user. Xwayland admits local clients only when it can resolve their
-user name, so the script mounts a minimal passwd file with that user. The
-GitHub workflow runs the same script for Debian stable, the Ubuntu LTS and
-current releases, and Fedora, and uploads the reports. Failures appear as
-annotations in the workflow log.
+builds `Dockerfile` on the given base image with the packaged Vim variants
+that differ in the features the suite sees and the display servers, then
+runs `run.sh` inside with no network as the calling user. Debian's
+`vim-nox` is left out, as it only adds language interfaces to `vim.basic`
+and yields the same results. Xwayland admits local clients only when it can
+resolve their user name, so the script mounts a minimal passwd file with
+that user. The GitHub workflow runs the same script for Debian stable, the
+Ubuntu LTS and current releases, and Fedora, and uploads the reports.
+Failures appear as annotations in the workflow log.
 
 Builds without Vim9 script, such as `vim.tiny`, get a separate check that
 sourcing the plugin leaves no mappings behind. Such builds also lack the
