@@ -25,17 +25,17 @@ Keys that vanilla Vim would read differently, such as a Select mode key or
 the delete key that ignores register prefixes, carry a separate vanilla
 sequence that defines the expected registers.
 
-A reference built this way stays valid across Vim versions and makes a
-hand-written expectation unnecessary. Cases that fail show the field by
+A reference built this way stays valid across Vim versions and makes
+a hand-written expectation unnecessary. Cases that fail show the field by
 field difference between what vanilla Vim produced and what the plugin
 produced.
 
-A case can carry a known mark naming an accepted plugin limitation. Such a
-case is reported as known rather than failed, counted apart in the summary
-and exported as skipped in the JUnit report, so it does not fail the run.
-A marked case that passes fails the run instead, which keeps the marks
-honest. The mark sits on the axis value that produces the cases, next to
-what it concerns. One limitation is marked: typing a character outside
+A case can carry a known mark naming an accepted plugin limitation. Such
+a case is reported as known rather than failed, counted apart in the
+summary and exported as skipped in the JUnit report, so it does not fail
+the run. A marked case that passes fails the run instead, which keeps the
+marks honest. The mark sits on the axis value that produces the cases, next
+to what it concerns. One limitation is marked: typing a character outside
 printable ASCII over a Select mode selection, which the plugin does not
 map.
 
@@ -72,14 +72,13 @@ registers matrix under the default seed, the case is generated once.
 Plugin configurations live in the same file: the black hole default, named
 registers, distinct registers per family, the clipboard registers, an
 exclude list, pre-existing user mappings and a cut key. The user mappings
-come in every form Vim offers: for one mode, for Visual and Select
-together or for every mode, redirecting to a register, running another
-command or doing nothing. One configuration makes a key the plugin
-redirects the cut key. The register oracle follows the configuration, so
-an excluded key is expected to behave like vanilla Vim, a user mapping is
-expected to win, with its right-hand side standing in for the key in the
-vanilla sequence, and a cut mapping is expected to replace the
-redirection of its key.
+come in every form Vim offers: for one mode, for Visual and Select together
+or for every mode, redirecting to a register, running another command or
+doing nothing. One configuration makes a key the plugin redirects the cut
+key. The register oracle follows the configuration, so an excluded key is
+expected to behave like vanilla Vim, a user mapping is expected to win,
+with its right-hand side standing in for the key in the vanilla sequence,
+and a cut mapping is expected to replace the redirection of its key.
 
 Fixtures and register seeds live in `fixtures.vim`. Every register holds
 a distinct value before a case runs, so any unexpected write shows up in
@@ -102,14 +101,14 @@ The compositor is sway rather than weston because a headless weston offers
 no data control protocol and no input seat, which leaves terminal Vim
 without a clipboard and crashes gVim inside GTK on the first clipboard
 write. A display variant whose server binary is missing is reported as
-skipped with the binary named, and so is a gVim that cannot run on a
-display: a GTK build without the Wayland backend cannot open the `wayland`
-display, and the `xwayland` variant covers it under a Wayland compositor
-instead. Clipboard cases are skipped on builds without the clipboard
-feature. Each run records whether the clipboard was reachable: a Vim built
-with the Wayland feature reaches the clipboard under `wayland`, while a
-build without it sees the clipboard registers without reaching a
-clipboard, and the suite covers that state as such.
+skipped with the binary named, and so is a gVim that cannot run on
+a display: a GTK build without the Wayland backend cannot open the
+`wayland` display, and the `xwayland` variant covers it under a Wayland
+compositor instead. Clipboard cases are skipped on builds without the
+clipboard feature. Each run records whether the clipboard was reachable:
+a Vim built with the Wayland feature reaches the clipboard under `wayland`,
+while a build without it sees the clipboard registers without reaching
+a clipboard, and the suite covers that state as such.
 
 Running locally
 ---------------
@@ -118,17 +117,19 @@ Running locally
 
 Environment variables select what runs:
 
-| Variable   | Meaning                                                             |
-|------------|---------------------------------------------------------------------|
-| `VIM_BIN`  | terminal Vim binaries, space separated, default `vim`               |
-| `GVIM_BIN` | gVim binaries, space separated, default `gvim`; empty skips the GUI |
-| `DISPLAYS` | display variants, default `none x11 wayland xwayland`               |
-| `CONFIGS`  | plugin configurations from `matrices.vim`                           |
-| `MATRICES` | Vim pattern selecting matrix names                                  |
-| `CASES`    | Vim pattern selecting case ids                                      |
-| `RESULTS`  | report directory, default `test/results`                            |
-| `TIMEOUT`  | seconds per Vim process, default 900                                |
-| `VERBOSE`  | `1` prints every report line                                        |
+| Variable   | Meaning                                               |
+|------------|-------------------------------------------------------|
+| `VIM_BIN`  | terminal Vim binaries, space separated, default `vim` |
+| `GVIM_BIN` | gVim binaries, space separated, default `gvim`        |
+| `DISPLAYS` | display variants, default `none x11 wayland xwayland` |
+| `CONFIGS`  | plugin configurations from `matrices.vim`             |
+| `MATRICES` | Vim pattern selecting matrix names                    |
+| `CASES`    | Vim pattern selecting case ids                        |
+| `RESULTS`  | report directory, default `test/results`              |
+| `TIMEOUT`  | seconds per Vim process, default 900                  |
+| `VERBOSE`  | `1` prints every report line                          |
+
+An empty `GVIM_BIN` skips the GUI.
 
 For example, a local GTK 2 build is covered with
 `GVIM_BIN=/opt/vim-gtk2/bin/gvim test/run.sh`, and one matrix on one
@@ -154,5 +155,5 @@ annotations in the workflow log.
 Builds without Vim9 script, such as `vim.tiny`, get a separate check that
 sourcing the plugin leaves no mappings behind. Such builds also lack the
 eval feature, so the guard in the plugin cannot run and Vim reports every
-later line as an error; the check records those messages and passes as
-long as no mapping exists afterwards.
+later line as an error; the check records those messages and passes as long
+as no mapping exists afterwards.
