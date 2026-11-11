@@ -1,0 +1,328 @@
+vim9script
+
+# Runs every generated case in vanilla Vim and then in Vim with the plugin
+# loaded, compares the two and writes the reports.
+#
+# run.sh configures the process through environment variables:
+#   CUTLASS_CONFIG    plugin configuration name from matrices.vim
+#   CUTLASS_DISPLAY   display variant name, recorded in the reports
+#   CUTLASS_RESULTS   directory that receives the report files
+#   CUTLASS_CASES     optional pattern that selects case ids
+#   CUTLASS_MATRICES  optional pattern that selects matrix names
+#   CUTLASS_SCOPE     clipboard selects the cases that need the clipboard,
+#                     anything else every case
+
+import './fixtures.vim' as fx
+import './matrices.vim' as mx
+
+const test_dir = expand('<sfile>:p:h')
+const repo_dir = fnamemodify(test_dir, ':h')
+const results_dir = $CUTLASS_RESULTS
+const config_name = $CUTLASS_CONFIG
+const config = mx.configs[config_name]
+
+# Facts about this build that matrices use to decide what to generate
+const ctx: dict<any> = {
+    config: config,
+    config_name: config_name,
+    gui: has('gui_running') ? true : false,
+    clipboard: has('clipboard') ? true : false,
+    clipboard_working: has('clipboard_working') ? true : false,
+    display: $CUTLASS_DISPLAY,
+    registers: fx.seeded_registers + (has('clipboard') ? ['*', '+'] : []),
+}
+
+var snapshot: dict<any> = {}
+var saved_options: dict<any> = {}
+
+
+def Baseline()
+    set encoding=utf-8
+    set belloff=all
+    set nomore
+    set noswapfile
+    set hidden
+    set shortmess+=I
+    set noshowmode
+    set noshowcmd
+    set noruler
+    set laststatus=0
+    set lazyredraw
+    set report=99999
+    set nomodeline
+    set clipboard=
+    if has('gui_running')
+        set guioptions-=a
+        set guioptions-=A
+    else
+        # Terminal Vim switches bracketed paste and modifyOtherKeys around
+        # every fed key sequence, megabytes of codes in the log; the keys
+        # come from feedkeys() and never pass the terminal
+        set t_BE= t_BD= t_TI= t_TE=
+    endif
+    # The snapshot key records the state at the end of the fed keys from
+    # inside the mode the keys left Vim in; pending operators are cancelled
+    # instead, because a <Cmd> key there blocks waiting for a motion.
+    noremap <F10> <Cmd>call g:CutlassSnapshot()<CR>
+    noremap! <F10> <Cmd>call g:CutlassSnapshot()<CR>
+    onoremap <F10> <Esc>
+    cnoremap <F10> <C-C>
+enddef
+
+def NewBuffer(fixture: dict<any>, cursor: list<number>)
+    silent! bwipeout!
+    enew!
+    setlocal buftype=nofile bufhidden=wipe noswapfile noundofile
+    setlocal undolevels=-1
+    setline(1, fixture.lines)
+    setlocal undolevels<
+    # The register a Select mode CTRL-R picked outlives its Select session;
+    # only a command that returns to Select mode resets it
+    g:CutlassFeed("gh\<C-O>0\<Esc>")
+    for [name, pos] in items(fixture.marks)
+        setpos("'" .. name, [0, pos[0], pos[1], 0])
+    endfor
+    cursor(cursor[0], cursor[1])
+    setlocal nomodified
+    # The last Visual mode and area outlive the buffer they were used in
+    visualmode(1)
+    silent! delmarks < > [ ] . ^
+enddef
+
+def ApplySettings(settings: dict<any>)
+    saved_options = {}
+    for [name, value] in items(settings)
+        saved_options[name] = eval('&' .. name)
+        execute('&' .. name .. ' = ' .. string(value))
+    endfor
+enddef
+
+def RestoreSettings()
+    for [name, value] in items(saved_options)
+        execute('&' .. name .. ' = ' .. string(value))
+    endfor
+    saved_options = {}
+enddef
+
+def SeedRegisters(seed: dict<any>)
+    for name in ctx.registers
+        if name != '"'
+            var regtype = index(seed.linewise, name) >= 0 ? 'V'
+                : index(seed.blockwise, name) >= 0 ? "\<C-V>" : 'v'
+            setreg(name, [fx.SeedText(name)], regtype)
+        endif
+    endfor
+    setreg('"', {points_to: seed.points_to})
+enddef
+
+def Snapshot(): dict<any>
+    var marks: dict<any> = {}
+    for name in ['[', ']', '<', '>', '.', '^', 'a', 'b']
+        marks[name] = getpos("'" .. name)[1 : 2]
+    endfor
+    var registers: dict<any> = {}
+    for name in ctx.registers
+        registers[name] = getreginfo(name)
+    endfor
+    return {
+        lines: getline(1, '$'),
+        cursor: getcurpos()[1 : 4],
+        mode: mode(1),
+        visualmode: visualmode(),
+        marks: marks,
+        registers: registers,
+        search: getreg('/'),
+        modified: &modified ? true : false,
+        errmsg: v:errmsg,
+    }
+enddef
+
+def g:CutlassSnapshot()
+    snapshot = Snapshot()
+enddef
+
+# Runs one key sequence from the case's initial state and returns the state
+# right after the keys.
+def Execute(case: dict<any>, keys: string): dict<any>
+    var fixture = fx.fixtures[case.fixture]
+    NewBuffer(fixture, get(case, 'cursor', fixture.cursor))
+    ApplySettings(get(case, 'settings', {}))
+    SeedRegisters(fx.seeds[get(case, 'seed', 'plain')])
+    setreg('/', '')
+    v:errmsg = ''
+    snapshot = {}
+    g:CutlassFeed(keys .. "\<F10>")
+    var after = empty(snapshot) ? Snapshot() : snapshot
+    # Modes that persist after the typeahead ran out, Visual and Select,
+    # are only visible here: the snapshot key sees Select as Visual
+    after.mode_after = mode(1)
+    var tries = 0
+    while mode(1) != 'n' && tries < 5
+        g:CutlassFeed("\<Esc>")
+        tries += 1
+    endwhile
+    RestoreSettings()
+    return after
+enddef
+
+def Diff(expected: any, actual: any, path: string, out: list<string>)
+    if type(expected) != type(actual)
+        add(out, path .. ': expected ' .. string(expected) .. ', actual ' .. string(actual))
+    elseif type(expected) == v:t_dict
+        for key in sort(keys(expected) + keys(actual))->uniq()
+            if !has_key(actual, key)
+                add(out, path .. '.' .. key .. ': missing, expected ' .. string(expected[key]))
+            elseif !has_key(expected, key)
+                add(out, path .. '.' .. key .. ': unexpected ' .. string(actual[key]))
+            else
+                Diff(expected[key], actual[key], path .. '.' .. key, out)
+            endif
+        endfor
+    elseif expected != actual
+        add(out, path .. ': expected ' .. string(expected) .. ', actual ' .. string(actual))
+    endif
+enddef
+
+def Unmet(case: dict<any>): string
+    for need in get(case, 'needs', [])
+        if !has(need)
+            return 'build lacks ' .. need
+        endif
+    endfor
+    return ''
+enddef
+
+def Selected(case: dict<any>): bool
+    return (empty($CUTLASS_MATRICES) || case.matrix =~ $CUTLASS_MATRICES)
+        && (empty($CUTLASS_CASES) || case.id =~ $CUTLASS_CASES)
+        && ($CUTLASS_SCOPE != 'clipboard' || indexof(case.needs, (_, need) => need =~ '^clipboard') >= 0)
+enddef
+
+def LoadPlugin()
+    g:vim9cutlass_registers = deepcopy(config.registers)
+    g:vim9cutlass_exclude = deepcopy(get(config, 'exclude', []))
+    g:vim9cutlass_cut = get(config, 'cut', v:null)
+    for map in get(config, 'usermaps', [])
+        execute(map.mode .. 'noremap ' .. map.lhs .. ' ' .. map.rhs)
+    endfor
+    execute('source ' .. fnameescape(repo_dir .. '/plugin/cutlass.vim'))
+    if !exists('g:vim9cutlass_loaded')
+        throw 'plugin did not load'
+    endif
+enddef
+
+def XmlEscape(text: string): string
+    return text->substitute('&', '\&amp;', 'g')->substitute('<', '\&lt;', 'g')
+        ->substitute('>', '\&gt;', 'g')->substitute('"', '\&quot;', 'g')
+        ->substitute('[^[:print:]\t\n]', '', 'g')
+enddef
+
+def WriteReports(results: list<dict<any>>, run: string)
+    var counts = {PASS: 0, FAIL: 0, SKIP: 0}
+    var report: list<string> = []
+    var xml: list<string> = ['<?xml version="1.0" encoding="UTF-8"?>']
+    var cases: list<string> = []
+    for result in results
+        counts[result.status] += 1
+        var name = XmlEscape(result.id)
+        if result.status == 'PASS'
+            add(cases, printf('  <testcase classname="%s" name="%s"/>', XmlEscape(run), name))
+        elseif result.status == 'SKIP'
+            add(cases, printf('  <testcase classname="%s" name="%s"><skipped message="%s"/></testcase>',
+                XmlEscape(run), name, XmlEscape(result.reason)))
+        else
+            var detail = join(result.diffs, "\n")
+            add(report, 'FAIL ' .. result.id)
+            extend(report, mapnew(result.diffs, (_, line) => '    ' .. line))
+            add(cases, printf('  <testcase classname="%s" name="%s"><failure message="%s">%s</failure></testcase>',
+                XmlEscape(run), name, XmlEscape(result.diffs[0]), XmlEscape(detail)))
+        endif
+    endfor
+    var skips: dict<number> = {}
+    for result in results
+        if result.status == 'SKIP'
+            skips[result.reason] = get(skips, result.reason, 0) + 1
+        endif
+    endfor
+    for [reason, count] in items(skips)
+        add(report, printf('SKIP %d cases: %s', count, reason))
+    endfor
+    add(report, printf('SUMMARY %s: %d passed, %d failed, %d skipped, clipboard %s%s',
+        run, counts.PASS, counts.FAIL, counts.SKIP,
+        ctx.clipboard_working ? 'working' : (ctx.clipboard ? 'present' : 'absent'),
+        $CUTLASS_SCOPE == 'clipboard' ? ', clipboard cases only' : ''))
+    add(xml, printf('<testsuite name="%s" tests="%d" failures="%d" skipped="%d">',
+        XmlEscape(run), len(results), counts.FAIL, counts.SKIP))
+    extend(xml, cases)
+    add(xml, '</testsuite>')
+    writefile(report, results_dir .. '/report.txt')
+    writefile(xml, results_dir .. '/junit.xml')
+    writefile(results->copy()->filter((_, r) => r.status != 'PASS')->map((_, r) => json_encode(r)),
+        results_dir .. '/results.jsonl')
+enddef
+
+def Main()
+    Baseline()
+    var run = printf('%s/%s/%s', ctx.display, config_name, ctx.gui ? 'gui' : 'term')
+    var cases = filter(mx.Cases(ctx), (_, c) => Selected(c))
+    var ids: dict<bool> = {}
+    for case in cases
+        if has_key(ids, case.id)
+            throw 'duplicate case id ' .. case.id
+        endif
+        ids[case.id] = true
+    endfor
+    # The expected states wait for the plugin phase in their string form,
+    # which takes a fraction of the memory of their dictionaries
+    var expected_states: dict<string> = {}
+    for case in cases
+        if !empty(Unmet(case))
+            continue
+        endif
+        # The vanilla run of the keys defines the expected state, with the
+        # registers of the vanilla run that carries the register prefixes
+        var expected = Execute(case, case.vanilla)
+        if case.vanilla_regs != case.vanilla
+            expected.registers = Execute(case, case.vanilla_regs).registers
+        endif
+        expected_states[case.id] = string(expected)
+    endfor
+    LoadPlugin()
+    var results: list<dict<any>> = []
+    for case in cases
+        var unmet = Unmet(case)
+        if !empty(unmet)
+            add(results, {id: case.id, matrix: case.matrix, status: 'SKIP', reason: unmet})
+            continue
+        endif
+        var plugin = Execute(case, case.keys)
+        var diffs: list<string> = []
+        var expected: dict<any> = {}
+        # Equal string forms mean equal states; the expected state is only
+        # rebuilt for the recursive walk that describes a difference
+        if string(plugin) != expected_states[case.id]
+            expected = eval(expected_states[case.id])
+            Diff(expected, plugin, '', diffs)
+        endif
+        var status = empty(diffs) ? 'PASS' : 'FAIL'
+        var result = {
+            id: case.id, matrix: case.matrix,
+            status: status,
+            diffs: diffs,
+            keys: strtrans(case.keys), vanilla: strtrans(case.vanilla),
+        }
+        if status == 'FAIL' && !empty(expected)
+            extend(result, {expected: expected, actual: plugin})
+        endif
+        add(results, result)
+    endfor
+    WriteReports(results, run)
+    execute(indexof(results, (_, r) => r.status == 'FAIL') >= 0 ? 'cquit!' : 'qall!')
+enddef
+
+try
+    Main()
+catch
+    writefile(['HARNESS ERROR ' .. v:exception .. ' @ ' .. v:throwpoint], results_dir .. '/report.txt')
+    cquit!
+endtry
