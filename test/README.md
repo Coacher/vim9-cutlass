@@ -30,6 +30,15 @@ a hand-written expectation unnecessary. Cases that fail show the field by
 field difference between what vanilla Vim produced and what the plugin
 produced.
 
+A case can carry a known mark naming an accepted plugin limitation. Such
+a case is reported as known rather than failed, counted apart in the
+summary and exported as skipped in the JUnit report, so it does not fail
+the run. A marked case that passes fails the run instead, which keeps the
+marks honest. The mark sits on the axis value that produces the cases, next
+to what it concerns. One limitation is marked: typing a character outside
+printable ASCII over a Select mode selection, which the plugin does not
+map.
+
 Matrices
 --------
 
@@ -138,9 +147,9 @@ For example, a local GTK 2 build is covered with
 configuration with `MATRICES='^select$' CONFIGS=named test/run.sh`.
 
 Each run writes `report.txt`, `junit.xml` and `results.jsonl` under the
-results directory. `results.jsonl` lists the cases that failed or were
-skipped; JUnit alone lists the passing ones. The JSON lines of failing
-cases carry the full expected and actual state.
+results directory. `results.jsonl` lists the cases that failed, were
+skipped or are known failures; JUnit alone lists the passing ones. The JSON
+lines of failing cases carry the full expected and actual state.
 
 Distribution coverage
 ---------------------

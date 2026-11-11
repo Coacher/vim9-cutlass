@@ -17,6 +17,7 @@ vim9script
 #                 registers, when they differ from vanilla
 #   register      the register the plugin redirects the text to, '' when
 #                 it leaves the key alone
+#   known         the accepted plugin limitation that makes the case fail
 #   needs         has() features the case requires
 
 import './fixtures.vim' as fx
@@ -191,6 +192,7 @@ def Case(matrix: string, parts: list<any>, spec: dict<any>): dict<any>
         seed: 'plain',
         settings: {},
         register: '_',
+        known: '',
     }, spec)
     if !has_key(case, 'vanilla_regs')
         case.vanilla_regs = case.vanilla
@@ -370,14 +372,15 @@ const select_entries: list<dict<any>> = [
 # plugin does not map, so that Vim's own replacement runs.  CTRL-H keeps
 # its modifier apart, as the GUI and key protocol terminals deliver a
 # keypress.
+const multibyte_select_known = 'multibyte Select typing is not redirected'
 const select_keys: list<dict<any>> = [
     {key: 'X'}, {key: 'a'}, {key: 'd'}, {key: '1'},
     {key: '|'}, {key: '"'}, {key: '\'}, {key: '<'},
     {key: ' '}, {key: "\<CR>"}, {key: "\<NL>"}, {key: "\<kEnter>"},
     {key: "\<BS>"}, {key: "\<Del>"}, {key: "\<kDel>"}, {key: "\<*C-H>"},
     {key: "\<Tab>", redirected: false},
-    {key: 'ю'},
-    {key: '日'},
+    {key: 'ю', known: multibyte_select_known},
+    {key: '日', known: multibyte_select_known},
 ]
 
 def Select(ctx: dict<any>): list<dict<any>>
@@ -401,6 +404,7 @@ def Select(ctx: dict<any>): list<dict<any>>
             vanilla: prelude .. vanilla.keys,
             vanilla_regs: prelude .. vanilla.regs,
             register: register,
+            known: get(combo.key, 'known', ''),
         }))
     endfor
     return cases

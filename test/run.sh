@@ -39,6 +39,7 @@ trap 'stop_display; rm -rf "$scratch"' EXIT
 total_pass=0
 total_fail=0
 total_skip=0
+total_known=0
 # The display server where a build and kind ran every case
 declare -A full_servers
 failed_runs=()
@@ -187,13 +188,15 @@ run_process() {
     if [ -n "${GITHUB_ACTIONS:-}" ]; then
         annotate "$run_dir/report.txt" "$display/$config/$name-$kind"
     fi
-    local pass fail skip
+    local pass fail skip known
     pass=$(printf '%s' "$summary" | sed -n 's/.*: \([0-9]*\) passed.*/\1/p')
     fail=$(printf '%s' "$summary" | sed -n 's/.* \([0-9]*\) failed.*/\1/p')
     skip=$(printf '%s' "$summary" | sed -n 's/.* \([0-9]*\) skipped.*/\1/p')
+    known=$(printf '%s' "$summary" | sed -n 's/.* \([0-9]*\) known.*/\1/p')
     total_pass=$((total_pass + ${pass:-0}))
     total_fail=$((total_fail + ${fail:-0}))
     total_skip=$((total_skip + ${skip:-0}))
+    total_known=$((total_known + ${known:-0}))
     if [ "${fail:-0}" -gt 0 ]; then
         failed_runs+=("$display/$config/$name-$kind")
     fi
@@ -268,7 +271,7 @@ for display in $displays; do
     stop_display
 done
 
-log "TOTAL: $total_pass passed, $total_fail failed, $total_skip skipped"
+log "TOTAL: $total_pass passed, $total_fail failed, $total_skip skipped, $total_known known"
 for run in "${skipped_runs[@]}"; do
     log "  skipped: $run"
 done
